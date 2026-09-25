@@ -93,6 +93,13 @@ h1{font-size:clamp(26px,5vw,36px);font-weight:800;letter-spacing:-.01em;line-hei
 .score b{font-family:var(--mono);font-size:28px;font-weight:700;line-height:1;white-space:nowrap}
 .score small{display:block;font-size:11px;color:var(--muted);letter-spacing:.06em;text-transform:uppercase}
 .musts{display:flex;flex-wrap:wrap;gap:5px}
+.commutes{display:flex;flex-direction:column;gap:2px;font-size:13px}
+.crow{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 12px}
+.crow b{font-weight:600;min-width:64px}
+.cm{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:12.5px;white-space:nowrap}
+.cm.none{color:var(--muted)}
+.cml{font-family:var(--display);color:var(--muted);font-size:12px}
+.four{display:grid;grid-template-columns:auto 1fr 1fr 1fr;gap:10px;align-items:end}
 .must{font-size:12px;border:1px solid var(--line);border-radius:4px;padding:1px 6px;color:var(--muted)}
 .must.y{border-color:transparent;background:var(--good-bg);color:var(--good)}
 .must.n{border-color:transparent;background:var(--bad-bg);color:var(--bad)}
@@ -189,6 +196,10 @@ body.modal-open{overflow:hidden}
   .mfoot{margin-inline:-16px;padding:10px 16px calc(10px + env(safe-area-inset-bottom,0px));border-top:1px solid var(--line);box-shadow:0 -6px 16px rgba(0,0,0,.08)}
   .mfoot .btn{flex:1 1 0}
   .three{grid-template-columns:auto 1fr 1fr;align-items:end}
+  .crow{gap:0 12px}
+  .crow b{flex:0 0 100%}
+  .four{grid-template-columns:1fr 1fr 1fr}
+  .four > .ql{grid-column:1 / -1;padding-bottom:0!important}
 }
 </style>
 
@@ -328,7 +339,7 @@ function applyRemote(d){
 }
 async function pull(){
   if(state.mode!=='remote')return;
-  try{const d=await api('GET','/api/state?since='+(remoteRev??''));if(d){applyRemote(d);render()}setSync('Saved online · syncs across devices')}
+  try{const d=await api('GET','/api/state?since='+(remoteRev??''));if(d){applyRemote(d);render();autoDrive()}setSync('Saved online · syncs across devices')}
   catch(e){if(e.code!=='locked')setSync('Offline. Changes will not save until you reconnect.')}
 }
 function setSync(t){$('sync').textContent=t}
@@ -341,7 +352,7 @@ async function tryRemote(){
   try{
     const d=await api('GET','/api/state');
     if(!d)return false;
-    state.mode='remote';applyRemote(d);setSync('Saved online · syncs across devices');render();
+    state.mode='remote';applyRemote(d);setSync('Saved online · syncs across devices');render();setTimeout(autoDrive,0);
     clearInterval(pollTimer);pollTimer=setInterval(()=>{if(document.visibilityState==='visible')pull()},8000);
     document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')pull()});
     // iPhone Safari and home-screen apps resume from the background without a visibility change sometimes.
@@ -362,6 +373,39 @@ function lockForm(){
   setTimeout(()=>inp.focus(),0);
   return f;
 }
+/* Drive times from the map (online workspace only): fills any apartment x work location without one. */
+const driveBusy=new Set(),driveTried=new Set();let driveRunning=false;
+function nextDriveJob(){
+  for(const a of Object.values(state.apts)){
+    if(!a.address)continue;
+    for(const l of state.locs){
+      if(!l.address)continue;
+      const c=getC(a,l);if(c&&c.drive!=null)continue;
+      const tag=a.id+'|'+l.id+'|'+a.address+'|'+l.address;
+      if(!driveTried.has(tag))return{a,l,tag,key:a.id+'|'+l.id};
+    }
+  }
+  return null;
+}
+async function autoDrive(){
+  if(state.mode!=='remote'||driveRunning)return;
+  driveRunning=true;
+  try{
+    for(let job=nextDriveJob();job;job=nextDriveJob()){
+      const{a,l,tag,key}=job;driveTried.add(tag);driveBusy.add(key);render();
+      let minutes=null,miles=null;
+      try{const r=await api('GET','/api/drive?from='+encodeURIComponent(a.address)+'&to='+encodeURIComponent(l.address));
+        minutes=r&&typeof r.minutes==='number'?r.minutes:null;miles=r&&typeof r.miles==='number'?r.miles:null}catch(e){}
+      driveBusy.delete(key);
+      const cur=state.apts[a.id];
+      const base=cur&&getC(cur,l)||{};
+      if(cur&&minutes!=null&&base.drive==null){
+        const upd={...cur,commutes:{...(cur.commutes||{}),[l.id]:{...base,drive:minutes,driveSrc:'map',miles}}};delete upd.id;
+        await saveApt(a.id,upd);
+      }else render();
+    }
+  }finally{driveRunning=false}
+}
 async function saveCustom(list){
   setCustom(list);render();
   if(db)await db.doc('config/factors').set({list});
@@ -370,14 +414,14 @@ async function saveCustom(list){
 async function saveLocs(list){
   state.locs=list;render();
   if(db)await db.doc('config/locations').set({list});
-  else if(state.mode==='remote')await remoteWrite('PUT','/api/config/locations',{list});else lsSave();
+  else if(state.mode==='remote'){await remoteWrite('PUT','/api/config/locations',{list});setTimeout(autoDrive,0)}else lsSave();
 }
 async function saveApt(id,data){
   data.updatedAt=new Date().toISOString();
   state.apts[id]={...data,id};render();
   const body={...data};delete body.id;
   if(db)await db.collection('apartments').doc(id).set(body);
-  else if(state.mode==='remote')await remoteWrite('PUT','/api/apartments/'+encodeURIComponent(id),body);else lsSave();
+  else if(state.mode==='remote'){await remoteWrite('PUT','/api/apartments/'+encodeURIComponent(id),body);setTimeout(autoDrive,0)}else lsSave();
 }
 async function deleteApt(id){
   delete state.apts[id];render();
@@ -435,7 +479,7 @@ Reply with only one JSON object in this shape:
 "beds3Available":true/false/null,"baths":number or null (for a 3-bed),"petsAllowed":true/false/null,"petNote":"string or null",
 "parkingAvailable":true/false/null,"parking":"short note","washerDryer":true/false/null,
 "amenities":["up to 8 short items"],
-"commutes":[{"id":"work location id","walkMin":number or null,"transitMin":number or null (door-to-door, weekday morning)}] (one entry per work location),
+"commutes":[{"id":"work location id","walkMin":number or null,"transitMin":number or null (door-to-door, weekday morning),"driveMin":number or null (weekday morning traffic)}] (one entry per work location),
 "pros":["up to 5 short items"],"cons":["up to 5 short items"],
 "safetyNote":"1 sentence on how the surrounding blocks feel day and night, or null",
 "scores":{"bedrooms":1-10,"light":1-10,"safety":1-10 (surrounding blocks, day and night),"living":1-10,"baths":1-10,"amenities":1-10,"condition":1-10,"parking":1-10,"pets":1-10${state.custom.map(c=>`,"${c.k}":1-10 (${c.label.replace(/"/g,"'")}${c.desc?': '+c.desc.replace(/"/g,"'"):''})`).join('')}},
@@ -459,7 +503,7 @@ async function onAdd(){
     const r=await sample.json(researchPrompt(q),{signal:ctl.signal,modelTier:'default',onText:()=>{msg.textContent='Writing up the results…'}});
     if(!r||typeof r!=='object'||!r.name)throw{code:'invalid_json'};
     const sc=r.scores||{};const rent=num(r.rentEstimate);
-    const commutes={};(Array.isArray(r.commutes)?r.commutes:[]).forEach(c=>{if(c&&state.locs.some(l=>l.id===c.id))commutes[c.id]={walk:num(c.walkMin),transit:num(c.transitMin)}});
+    const commutes={};(Array.isArray(r.commutes)?r.commutes:[]).forEach(c=>{if(c&&state.locs.some(l=>l.id===c.id))commutes[c.id]={walk:num(c.walkMin),transit:num(c.transitMin),drive:num(c.driveMin),driveSrc:num(c.driveMin)==null?null:'claude'}});
     const walk=commutes.jessie?commutes.jessie.walk:null,transit=commutes.jessie?commutes.jessie.transit:null;
     const scores={};for(const f of FACTORS)scores[f.k]=clamp(Math.round(num(sc[f.k])??5),1,10);
     scores.rent=rentScore(rent);
@@ -528,13 +572,20 @@ function factsLine(a){
   if(a.baths!=null||a.beds!=null)bits.push(bd+' bd / '+(a.baths??'?')+' ba');
   if(a.allWindows===false)bits.push('A bedroom has no window');
   if(a.allClosets===false)bits.push('Not every bedroom has a closet');
-  for(const l of state.locs){
-    const c=getC(a,l);let t='?';
-    if(known(c))t=c.walk!=null&&(c.walk<=25||c.transit==null)?c.walk+' min walk':c.transit+' min transit';
-    bits.push(l.name+': '+t);
-  }
   if(a.address)bits.push(a.address);
   return bits;
+}
+// One line per work location: walk, transit and drive minutes.
+function commuteRows(a){
+  return h('div',{class:'commutes'},state.locs.map(l=>{
+    const c=getC(a,l)||{};
+    const m=(v,label)=>h('span',{class:'cm'+(v==null?' none':'')},h('span',{class:'cml'},label+' '),v==null?'—':v+' min');
+    const drive=c.drive!=null?c.drive:null;
+    const pending=drive==null&&driveBusy.has(a.id+'|'+l.id);
+    return h('div',{class:'crow'},h('b',null,l.name),m(c.walk??null,'Walk'),m(c.transit??null,'Transit'),
+      pending?h('span',{class:'cm none'},h('span',{class:'cml'},'Drive '),'finding…'):
+        h('span',{class:'cm'+(drive==null?' none':''),title:c.driveSrc==='map'?'Map estimate padded for weekday traffic'+(c.miles!=null?' · '+c.miles+' mi':''):''},h('span',{class:'cml'},'Drive '),drive==null?'—':drive+' min'+(c.driveSrc==='map'?'*':'')));
+  }));
 }
 function card(a,s,f,rank){
   const open=!!state.open[a.id];
@@ -547,6 +598,7 @@ function card(a,s,f,rank){
         a.application?h('span',{class:'chip '+appCls(a.application.status)},'App: '+appLabel(a.application.status)):null,
         f.length?h('span',{class:'chip bad'},'Missing: '+f.join(', ')):null),
       h('div',{class:'facts'},factsLine(a).map(b=>h('span',null,b))),
+      commuteRows(a),
       h('div',{class:'musts'},MUSTS.map(([k,l])=>{const v=(a.must||{})[k];return h('span',{class:'must '+(v===true?'y':v===false?'n':''),title:v==null?'Unconfirmed':''},(v===true?'✓ ':v===false?'✗ ':'? ')+l)})),
       h('div',{class:'bar'},h('i',{style:`width:${clamp(s,0,100)}%`}))),
     h('div',{class:'score'},h('b',null,s),h('small',null,'/ 100')));
@@ -649,7 +701,11 @@ function openQuiz(a){
     const issues=ISSUES.map(i=>i[0]).filter(k=>fd.get('i-'+k));
     const rent=num(fd.get('rent'));
     const commutes={...(a.commutes||{})};
-    state.locs.forEach(l=>{commutes[l.id]={walk:num(fd.get('walk-'+l.id)),transit:num(fd.get('transit-'+l.id))}});
+    state.locs.forEach(l=>{
+      const prev=getC(a,l)||{};const drive=num(fd.get('drive-'+l.id));
+      commutes[l.id]={walk:num(fd.get('walk-'+l.id)),transit:num(fd.get('transit-'+l.id)),drive,
+        driveSrc:drive==null?null:drive===prev.drive?(prev.driveSrc||'manual'):'manual'};
+    });
     const walk=commutes.jessie?commutes.jessie.walk:(a.walkMin??null),transit=commutes.jessie?commutes.jessie.transit:(a.transitMin??null);
     // Bedroom score: overall feel, minus a window-less room (2), missing closets (1) and each other problem (1); a 4th room adds 1.
     const beds=val('bedcount');
@@ -692,11 +748,12 @@ function openQuiz(a){
     h('div',{class:'section-lbl'},'Money & commute'),
     h('div',{class:'q'},h('label',{class:'ql',for:'f-rent'},'12-month rent ($)'),h('input',{type:'number',id:'f-rent',name:'rent',min:'0',step:'25',inputmode:'numeric',value:a.rent??''}),
       h('div',{class:'hint'},'Leave blank if you don’t know it yet. It stays a placeholder.')),
-    h('div',{class:'q'},h('div',{class:'ql'},'Commute to each work location (minutes)'),h('div',{class:'hint'},'Leave blank if unknown. Passes at under 25 min walking or under 30 min on transit.')),
-    ...state.locs.map(l=>{const c=getC(a,l)||{};return h('div',{class:'three'},
+    h('div',{class:'q'},h('div',{class:'ql'},'Commute to each work location (minutes)'),h('div',{class:'hint'},'Leave blank if unknown. Passes at under 25 min walking or under 30 min on transit. Drive time is filled in from a map when possible; type your own to replace it.')),
+    ...state.locs.map(l=>{const c=getC(a,l)||{};return h('div',{class:'four'},
       h('div',{class:'ql',style:'align-self:end;padding-bottom:8px'},l.name),
-      h('div',{class:'q'},h('label',{class:'hint',for:'f-walk-'+l.id},'Walk'),h('input',{type:'number',id:'f-walk-'+l.id,name:'walk-'+l.id,min:'0',value:c.walk??''})),
-      h('div',{class:'q'},h('label',{class:'hint',for:'f-transit-'+l.id},'Transit'),h('input',{type:'number',id:'f-transit-'+l.id,name:'transit-'+l.id,min:'0',value:c.transit??''})))}),
+      h('div',{class:'q'},h('label',{class:'hint',for:'f-walk-'+l.id},'Walk'),h('input',{type:'number',id:'f-walk-'+l.id,name:'walk-'+l.id,min:'0',inputmode:'numeric',value:c.walk??''})),
+      h('div',{class:'q'},h('label',{class:'hint',for:'f-transit-'+l.id},'Transit'),h('input',{type:'number',id:'f-transit-'+l.id,name:'transit-'+l.id,min:'0',inputmode:'numeric',value:c.transit??''})),
+      h('div',{class:'q'},h('label',{class:'hint',for:'f-drive-'+l.id},'Drive'),h('input',{type:'number',id:'f-drive-'+l.id,name:'drive-'+l.id,min:'0',inputmode:'numeric',value:c.drive??''})))}),
     h('div',{class:'section-lbl'},'Your take'),
     h('div',{class:'two'},
       h('div',{class:'q'},h('label',{class:'ql',for:'f-pros'},'Pros (one per line)'),h('textarea',{id:'f-pros',name:'pros'},(a.pros||[]).join('\n'))),
@@ -797,7 +854,7 @@ function openLocs(){
     msg.className='addmsg';msg.textContent='Saved. '+(missing?`${missing} apartment${missing>1?'s are':' is'} missing commute times.`:'Every apartment has commute times.');
   }},
     h('h2',{id:'ltitle'},'Work locations'),
-    h('div',{class:'tabnote'},'Add where each roommate works. Commute scores average everyone’s trip, and an apartment fails the commute check if anyone’s trip is over 25 min walking and 30 min on transit.'),
+    h('div',{class:'tabnote'},'Add where each roommate works. Commute scores average everyone’s trip, and an apartment fails the commute check if anyone’s trip is over 25 min walking and 30 min on transit. Every apartment shows each person’s walk, transit and drive time; on the website, drive times fill in from a map automatically.'),
     list,
     h('div',null,h('button',{type:'button',class:'btn small',onclick:()=>{rows.push({id:null,name:'',address:''});drawRows();list.querySelector('.locrow:last-child input')?.focus()}},'+ Add location')),
     msg,
@@ -806,20 +863,23 @@ function openLocs(){
   const close=showModal(form);
 }
 async function fillCommutes(msg,btn){
-  const need=Object.values(state.apts).filter(commuteUnknown);
+  const gap=(a,l)=>{const c=getC(a,l);return !known(c)||c.drive==null};
+  const need=Object.values(state.apts).filter(a=>state.locs.some(l=>gap(a,l)));
   if(!need.length){msg.className='addmsg';msg.textContent='Every apartment already has commute times.';return}
-  const pairs=[];need.forEach(a=>state.locs.forEach(l=>{if(!known(getC(a,l)))pairs.push({apt:a.id,name:a.name,address:a.address||'unknown',loc:l.id,to:l.address})}));
+  const pairs=[];need.forEach(a=>state.locs.forEach(l=>{if(gap(a,l))pairs.push({apt:a.id,name:a.name,address:a.address||'unknown',loc:l.id,to:l.address})}));
   btn.disabled=true;msg.className='addmsg';msg.textContent='Estimating commute times… this can take up to a minute.';
   try{
     const r=await sample.json(`Estimate weekday-morning commute times in Los Angeles for each pair below. Use typical walking speed and Metro rail/bus door-to-door times. Use null for transit if there is no reasonable route.
 Pairs (apartment -> work):
 ${pairs.map(p=>`- apt "${p.apt}" (${p.name}, ${p.address}) -> loc "${p.loc}" (${p.to})`).join('\n')}
-Reply with only JSON: {"<apt id>":{"<loc id>":{"walkMin":number or null,"transitMin":number or null}}}`,{modelTier:'default'});
+Reply with only JSON: {"<apt id>":{"<loc id>":{"walkMin":number or null,"transitMin":number or null,"driveMin":number or null}}}`,{modelTier:'default'});
     let n=0;
     for(const a of need){
       const got=r&&r[a.id];if(!got)continue;
       const commutes={...(a.commutes||{})};
-      state.locs.forEach(l=>{const c=getC(a,l);if(known(c))commutes[l.id]=c;else if(got[l.id])commutes[l.id]={walk:num(got[l.id].walkMin),transit:num(got[l.id].transitMin)}});
+      state.locs.forEach(l=>{const c=getC(a,l)||{};const g=got[l.id]||{};const gd=num(g.driveMin);
+        commutes[l.id]={walk:c.walk??num(g.walkMin),transit:c.transit??num(g.transitMin),drive:c.drive??gd,
+          driveSrc:c.drive!=null?(c.driveSrc||'manual'):gd!=null?'claude':null}});
       const upd={...a,commutes};upd.scores={...a.scores,commute:commuteAvg(upd)};delete upd.id;
       await saveApt(a.id,upd);n++;
     }
