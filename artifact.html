@@ -524,7 +524,10 @@ function render(){
 function factsLine(a){
   const bits=[];
   bits.push(a.rent!=null?money(a.rent)+'/mo':(a.rentNote||'Rent ?'));
-  if(a.baths!=null)bits.push('3 bd / '+a.baths+' ba');
+  const bd=a.bedsLabel||(a.beds!=null?String(a.beds):'3');
+  if(a.baths!=null||a.beds!=null)bits.push(bd+' bd / '+(a.baths??'?')+' ba');
+  if(a.allWindows===false)bits.push('A bedroom has no window');
+  if(a.allClosets===false)bits.push('Not every bedroom has a closet');
   for(const l of state.locs){
     const c=getC(a,l);let t='?';
     if(known(c))t=c.walk!=null&&(c.walk<=25||c.transit==null)?c.walk+' min walk':c.transit+' min transit';
@@ -615,24 +618,32 @@ const Q={
   amenities:{l:'Amenities',o:[['great','Great',10],['good','Good',8],['basic','Basic',5],['none','Few / none',2]]},
   parking:{l:'Parking',o:[['incl','In building, included',10],['paid','In building, paid',8],['offsite','Off-site / across street',5],['street','Street only',3],['none','None',1]]},
   pets:{l:'Pets',o:[['nofee','Dogs OK, no fees',10],['esa','Free with ESA letter',9],['low','Dogs OK, low fees',8],['high','Dogs OK, high fees',5],['no','Not allowed',1]]},
-  beds3:{l:'Real 3 bedrooms (each with a window)?',o:[['yes','Yes',1],['no','No',0]]},
+  bedcount:{l:'How many bedrooms?',o:[['2','2',2],['2den','2 + den',2],['3','3',3],['4','4',4],['5','5+',5]]},
+  windows:{l:'Do all bedrooms have a window?',o:[['yes','Yes',0],['no','No',2]]},
+  closets:{l:'Do all bedrooms have a closet?',o:[['yes','Yes',0],['no','No',1]]},
   laundry:{l:'In-unit washer/dryer?',o:[['yes','Yes',1],['no','No',0]]},
 };
-const ISSUES=[['noclosets','Bedrooms without closets'],['windowless','Room without a window'],['translucent','See-through / no-privacy doors'],['small3rd','Small 3rd bedroom']];
+const ISSUES=[['translucent','See-through / no-privacy doors'],['small3rd','A bedroom is much smaller than the rest']];
+// Prefill the new bedroom questions from answers saved by the older questionnaire.
+function legacyTour(t){
+  const i=t.issues||[];
+  return{bedcount:t.bedcount||(t.beds3==='yes'?'3':t.beds3==='no'?'2den':undefined),
+    windows:t.windows||(i.includes('windowless')?'no':undefined),closets:t.closets||(i.includes('noclosets')?'no':undefined)};
+}
 function radios(key,cur,q){
   q=q||Q[key];
   return h('div',{class:'q'},h('div',{class:'ql',id:'ql-'+key},q.l),
     h('div',{class:'opts',role:'radiogroup','aria-labelledby':'ql-'+key},q.o.map(([v,l])=>h('label',null,h('input',{type:'radio',name:'q-'+key,id:`q-${key}-${v}`,value:v,checked:cur===v}),l))));
 }
 function openQuiz(a){
-  const t=a.tour||{};
+  const t={...(a.tour||{}),...legacyTour(a.tour||{})};
   const root=$('modalroot');
   let close=()=>{root.replaceChildren();document.body.classList.remove('modal-open')};
   const err=h('div',{class:'addmsg err'});
   const form=h('form',{class:'modal',role:'dialog','aria-modal':'true','aria-labelledby':'qtitle',onsubmit:async e=>{
     e.preventDefault();
     const fd=new FormData(form);const pick=k=>fd.get('q-'+k);
-    const missing=['light','safety','living','bedrooms','baths','condition','amenities','parking','pets','beds3','laundry'].filter(k=>!pick(k));
+    const missing=['light','safety','living','bedcount','bedrooms','windows','closets','baths','condition','amenities','parking','pets','laundry'].filter(k=>!pick(k));
     if(missing.length){err.textContent='Answer every multiple-choice question first ('+missing.map(k=>Q[k].l).join('; ')+').';return}
     const val=k=>Q[k].o.find(o=>o[0]===pick(k))[2];
     const issues=ISSUES.map(i=>i[0]).filter(k=>fd.get('i-'+k));
@@ -640,7 +651,10 @@ function openQuiz(a){
     const commutes={...(a.commutes||{})};
     state.locs.forEach(l=>{commutes[l.id]={walk:num(fd.get('walk-'+l.id)),transit:num(fd.get('transit-'+l.id))}});
     const walk=commutes.jessie?commutes.jessie.walk:(a.walkMin??null),transit=commutes.jessie?commutes.jessie.transit:(a.transitMin??null);
-    const scores={light:val('light'),safety:val('safety'),living:val('living'),bedrooms:clamp(val('bedrooms')-issues.length,1,10),baths:val('baths'),
+    // Bedroom score: overall feel, minus a window-less room (2), missing closets (1) and each other problem (1); a 4th room adds 1.
+    const beds=val('bedcount');
+    const bedScore=clamp(val('bedrooms')-val('windows')-val('closets')-issues.length+(beds>=4?1:0),1,10);
+    const scores={light:val('light'),safety:val('safety'),living:val('living'),bedrooms:bedScore,baths:val('baths'),
       condition:val('condition'),amenities:val('amenities'),parking:val('parking'),pets:val('pets'),
       rent:rentScore(rent),commute:5};
     const guessed=[];if(rent==null)guessed.push('rent');
@@ -649,11 +663,13 @@ function openQuiz(a){
       else if(typeof a.scores?.[f.k]==='number'){scores[f.k]=a.scores[f.k];guessed.push(f.k)}});
     const split=s=>String(s||'').split('\n').map(x=>x.trim()).filter(Boolean);
     const tour={light:pick('light'),safety:pick('safety'),living:pick('living'),bedrooms:pick('bedrooms'),baths:pick('baths'),condition:pick('condition'),
-      amenities:pick('amenities'),parking:pick('parking'),pets:pick('pets'),beds3:pick('beds3'),laundry:pick('laundry'),issues,...custom};
+      amenities:pick('amenities'),parking:pick('parking'),pets:pick('pets'),bedcount:pick('bedcount'),windows:pick('windows'),closets:pick('closets'),
+      laundry:pick('laundry'),issues,...custom};
     const upd={...a,status:'toured',estimated:false,source:'tour',scores,guessed,tour,rent,walkMin:walk,transitMin:transit,commutes,
+      beds,bedsLabel:Q.bedcount.o.find(o=>o[0]===pick('bedcount'))[1],allWindows:pick('windows')==='yes',allClosets:pick('closets')==='yes',
       baths:parseFloat(pick('baths')),tourDate:fd.get('date')||null,gut:num(fd.get('gut')),
       pros:split(fd.get('pros')),cons:split(fd.get('cons')),notes:String(fd.get('notes')||'').trim(),
-      must:{beds:pick('beds3')==='yes',baths:parseFloat(pick('baths'))>=2,pets:pick('pets')!=='no',parking:pick('parking')!=='none'&&pick('parking')!=='street',laundry:pick('laundry')==='yes'}};
+      must:{beds:beds>=3,baths:parseFloat(pick('baths'))>=2,pets:pick('pets')!=='no',parking:pick('parking')!=='none'&&pick('parking')!=='street',laundry:pick('laundry')==='yes'}};
     upd.scores.commute=commuteAvg(upd);
     delete upd.id;
     await saveApt(a.id,upd);state.open[a.id]=true;close();setTab('toured');
@@ -661,10 +677,14 @@ function openQuiz(a){
     h('h2',{id:'qtitle'},'Tour questionnaire: '+a.name),
     h('div',{class:'tabnote'},'Your answers replace the estimates and move this apartment into Toured.'),
     h('div',{class:'section-lbl'},'The unit'),
-    radios('light',t.light),radios('living',t.living),radios('bedrooms',t.bedrooms),
-    h('div',{class:'q'},h('div',{class:'ql'},'Any bedroom problems?'),h('div',{class:'hint'},'Each one takes a point off the bedroom score.'),
+    radios('light',t.light),radios('living',t.living),
+    h('div',{class:'section-lbl'},'Bedrooms'),
+    radios('bedcount',t.bedcount),radios('bedrooms',t.bedrooms),radios('windows',t.windows),radios('closets',t.closets),
+    h('div',{class:'q'},h('div',{class:'ql'},'Any other bedroom problems?'),h('div',{class:'hint'},'A room with no window takes 2 points off the bedroom score, missing closets take 1, and each problem below takes 1.'),
       h('div',{class:'opts'},ISSUES.map(([k,l])=>h('label',null,h('input',{type:'checkbox',name:'i-'+k,id:'i-'+k,checked:(t.issues||[]).includes(k)}),l)))),
-    radios('baths',t.baths),radios('beds3',t.beds3),radios('laundry',t.laundry),radios('condition',t.condition),
+    h('div',{class:'section-lbl'},'Bathrooms & laundry'),
+    radios('baths',t.baths),radios('laundry',t.laundry),
+    h('div',{class:'section-lbl'},'Overall'),radios('condition',t.condition),
     h('div',{class:'section-lbl'},'The building'),
     radios('safety',t.safety),radios('amenities',t.amenities),radios('parking',t.parking),radios('pets',t.pets),
     ...(FACTORS.some(f=>f.custom)?[h('div',{class:'section-lbl'},'Your added factors'),
