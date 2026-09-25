@@ -386,7 +386,9 @@ const driveBusy=new Set(),driveTried=new Set(),driveErr={};let driveRunning=fals
 // Where a place is, for routing: its map pin when we have one, otherwise its address text.
 const where=x=>x.lat!=null&&x.lon!=null?x.lat+','+x.lon:(x.address||'');
 // A map drive time is stale when either end has moved since it was calculated.
-const driveStale=(c,pair)=>!!c&&c.driveSrc==='map'&&!!c.driveFor&&c.driveFor!==pair;
+// Map drive times are also stale when they came from an older estimate (DRIVE_MODEL bumps recalculate them).
+const DRIVE_MODEL=2;
+const driveStale=(c,pair)=>!!c&&c.driveSrc==='map'&&(c.driveModel!==DRIVE_MODEL||(!!c.driveFor&&c.driveFor!==pair));
 function nextDriveJob(){
   for(const a of Object.values(state.apts)){
     if(!where(a))continue;
@@ -447,15 +449,16 @@ async function autoDrive(){
   try{
     for(let job=nextDriveJob();job;job=nextDriveJob()){
       const{a,l,tag,pair,key}=job;driveTried.add(tag);driveBusy.add(key);render();
-      let minutes=null,miles=null,approx=false;
+      let minutes=null,rush=null,miles=null,approx=false;
       try{const r=await api('GET','/api/drive?from='+encodeURIComponent(where(a))+'&to='+encodeURIComponent(where(l)));
-        minutes=r&&typeof r.minutes==='number'?r.minutes:null;miles=r&&typeof r.miles==='number'?r.miles:null;approx=!!(r&&r.approx);
+        minutes=r&&typeof r.minutes==='number'?r.minutes:null;rush=r&&typeof r.rushMinutes==='number'?r.rushMinutes:null;
+        miles=r&&typeof r.miles==='number'?r.miles:null;approx=!!(r&&r.approx);
         if(minutes==null&&r&&r.error)driveErr[key]=r.error;}catch(e){}
       driveBusy.delete(key);
       const cur=state.apts[a.id];
       const base=cur&&getC(cur,l)||{};
       if(cur&&minutes!=null&&(base.drive==null||driveStale(base,pair))&&where(cur)+'|'+where(l)===pair){
-        const upd={...cur,commutes:{...(cur.commutes||{}),[l.id]:{...base,drive:minutes,driveSrc:'map',miles,approx,driveFor:pair}}};delete upd.id;
+        const upd={...cur,commutes:{...(cur.commutes||{}),[l.id]:{...base,drive:minutes,driveRush:rush,driveSrc:'map',driveModel:DRIVE_MODEL,miles,approx,driveFor:pair}}};delete upd.id;
         await saveApt(a.id,upd);
       }else render();
     }
@@ -645,8 +648,10 @@ function commuteRows(a){
     const pending=drive==null&&driveBusy.has(a.id+'|'+l.id);
     return h('div',{class:'crow'},h('b',null,l.name),m(c.walk??null,'Walk'),m(c.transit??null,'Transit'),
       pending?h('span',{class:'cm none'},h('span',{class:'cml'},'Drive '),'finding…'):
-        h('span',{class:'cm'+(drive==null?' none':''),title:drive==null?(driveErr[a.id+'|'+l.id]||''):c.driveSrc==='map'?(c.approx?'Approximate: one address wasn’t found, so this uses its ZIP code or city. ':'')+'Map estimate padded for weekday traffic'+(c.miles!=null?' · '+c.miles+' mi':''):''},
-          h('span',{class:'cml'},'Drive '),drive==null?(driveErr[a.id+'|'+l.id]?'address not found':'—'):(c.approx?'~':'')+drive+' min'+(c.driveSrc==='map'?'*':'')));
+        h('span',{class:'cm'+(drive==null?' none':''),title:drive==null?(driveErr[a.id+'|'+l.id]||''):c.driveSrc==='map'?(c.approx?'Approximate: one address wasn’t found, so this uses its ZIP code or city. ':'')+
+            'Map estimate: typical drive to rush hour'+(c.miles!=null?' · '+c.miles+' mi':''):''},
+          h('span',{class:'cml'},'Drive '),drive==null?(driveErr[a.id+'|'+l.id]?'address not found':'—'):
+            (c.approx?'~':'')+drive+(c.driveRush!=null&&c.driveRush>drive?'–'+c.driveRush:'')+' min'+(c.driveSrc==='map'?'*':'')));
   }));
 }
 function card(a,s,f,rank){
@@ -770,8 +775,10 @@ function openQuiz(a){
     const commutes={...(a.commutes||{})};
     state.locs.forEach(l=>{
       const prev=getC(a,l)||{};const drive=num(fd.get('drive-'+l.id));
-      commutes[l.id]={walk:num(fd.get('walk-'+l.id)),transit:num(fd.get('transit-'+l.id)),drive,
-        driveSrc:drive==null?null:drive===prev.drive?(prev.driveSrc||'manual'):'manual'};
+      const walkT=num(fd.get('walk-'+l.id)),transitT=num(fd.get('transit-'+l.id));
+      // Keep a map estimate (and its rush-hour range) when the drive box wasn't changed; a typed number replaces it.
+      commutes[l.id]=drive!=null&&drive===prev.drive?{...prev,walk:walkT,transit:transitT}:
+        {walk:walkT,transit:transitT,drive,driveSrc:drive==null?null:'manual'};
     });
     const walk=commutes.jessie?commutes.jessie.walk:(a.walkMin??null),transit=commutes.jessie?commutes.jessie.transit:(a.transitMin??null);
     // Bedroom score: overall feel, minus a window-less room (2), missing closets (1) and each other problem (1); a 4th room adds 1.

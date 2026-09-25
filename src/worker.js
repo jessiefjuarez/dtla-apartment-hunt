@@ -66,7 +66,7 @@ export class HuntStore extends DurableObject {
     const pa = point(from), pb = point(to);
     from = pa ? String(from).trim() : clean(from); to = pb ? String(to).trim() : clean(to);
     if (!from || !to) return { minutes: null, error: "Both addresses are needed." };
-    const key = "drv4:" + from.toLowerCase() + "|" + to.toLowerCase();
+    const key = "drv5:" + from.toLowerCase() + "|" + to.toLowerCase();
     const hit = await this.ctx.storage.get(key);
     if (hit) return hit;
     const a = pa || (await this.geocode(from)), b = pb || (await this.geocode(to));
@@ -77,11 +77,13 @@ export class HuntStore extends DurableObject {
     if (!r.ok) return { minutes: null, error: "The route service is busy. Try again later." };
     const route = (await r.json()).routes?.[0];
     if (!route) return { minutes: null, error: "No driving route found." };
-    // OSRM assumes empty roads. Pad it for LA weekday traffic: at least 1.8x free-flow or 3.5 min per mile,
-    // plus 2 min for lights and parking. Rough, but far closer to a real morning drive than free-flow.
+    // OSRM assumes empty roads. Turn that into a range for LA: a typical drive (1.25x free-flow + 2 min for
+    // lights and parking) and a rush-hour drive (1.8x + 3 min). Checked against Google Maps: TenTen to Burbank
+    // (13.9 mi, 19 min free-flow) gives 26-37 min where Google showed 28 min in afternoon traffic.
     const freeFlow = route.duration / 60, miles = route.distance / 1609.34;
     const out = {
-      minutes: Math.max(3, Math.round(Math.max(freeFlow * 1.8, miles * 3.5) + 2)),
+      minutes: Math.max(3, Math.round(freeFlow * 1.25 + 2)),
+      rushMinutes: Math.max(4, Math.round(freeFlow * 1.8 + 3)),
       freeFlowMinutes: Math.max(1, Math.round(freeFlow)),
       miles: Math.round(miles * 10) / 10,
       approx: !(a.exact && b.exact),
