@@ -1,0 +1,14 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "dtla-apartment-hunt",
+  "main": "src/worker.js",
+  "compatibility_date": "2026-09-23",
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS"
+  },
+  "durable_objects": {
+    "bindings": [{ "name": "HUNT", "class_name": "HuntStore" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["HuntStore"] }]
+}

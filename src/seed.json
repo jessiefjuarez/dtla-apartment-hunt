@@ -1,0 +1,352 @@
+{
+ "apts": {
+  "ava-arts-district": {
+   "address": "668 S Alameda St",
+   "amenities": [
+    "Gym",
+    "Pool deck",
+    "Office & lounge",
+    "Workspaces",
+    "Shops outside"
+   ],
+   "baths": 2,
+   "cons": [
+    "Den / one room has no window or lights",
+    "Small living room and kitchen",
+    "Transit commute close to the 30 min limit"
+   ],
+   "createdAt": "2026-09-25T00:00:00Z",
+   "estimated": false,
+   "guessed": [
+    "rent",
+    "safety",
+    "pets"
+   ],
+   "link": "https://www.avaloncommunities.com/",
+   "must": {
+    "baths": true,
+    "beds": true,
+    "laundry": true,
+    "parking": true,
+    "pets": null
+   },
+   "name": "AVA Arts District",
+   "neighborhood": "Arts District",
+   "notes": "From Ryan's and aundrey4's notes. Check the transit time at 8:30am on a weekday.",
+   "parkingNote": "In building, cost unknown",
+   "petNote": "Not confirmed",
+   "pros": [
+    "Really great lighting",
+    "High ceilings",
+    "Top floor, good views",
+    "Clean, nice finishes",
+    "Great amenities",
+    "Close to the arts"
+   ],
+   "rent": null,
+   "rentNote": "Rent ?",
+   "safetyNote": "Estimate: near the edge of the industrial blocks. Walk it at night to confirm.",
+   "scores": {
+    "amenities": 9,
+    "baths": 7,
+    "bedrooms": 7,
+    "commute": 5,
+    "condition": 9,
+    "light": 9,
+    "living": 4,
+    "parking": 7,
+    "pets": 6,
+    "rent": 6,
+    "safety": 5
+   },
+   "source": "tour",
+   "status": "toured",
+   "summary": "Best light and finishes of the group, top floor with views. Living room is small and the commute is the longest.",
+   "transitMin": 28,
+   "updatedAt": "2026-09-25T00:00:00Z",
+   "walkMin": 40
+  },
+  "ava-little-tokyo": {
+   "address": "236 S Los Angeles St",
+   "amenities": [
+    "In-unit washer/dryer",
+    "Pool & spas",
+    "Two-level gym",
+    "6th-floor skyline deck",
+    "Lounge with game tables",
+    "Bike storage"
+   ],
+   "baths": null,
+   "cons": [],
+   "createdAt": "2026-09-25T00:00:00Z",
+   "estimated": true,
+   "guessed": [
+    "bedrooms",
+    "light",
+    "rent",
+    "safety",
+    "living",
+    "baths",
+    "amenities",
+    "condition",
+    "commute",
+    "parking",
+    "pets"
+   ],
+   "link": "https://www.avaloncommunities.com/california/los-angeles-apartments/ava-little-tokyo/",
+   "must": {
+    "baths": null,
+    "beds": true,
+    "laundry": true,
+    "parking": true,
+    "pets": true
+   },
+   "name": "AVA Little Tokyo",
+   "neighborhood": "Little Tokyo",
+   "notes": "",
+   "parkingNote": "Controlled-access underground garage",
+   "petNote": "Dogs and cats allowed",
+   "pros": [
+    "Easy Metro commute",
+    "Strong amenities",
+    "Underground parking"
+   ],
+   "rent": null,
+   "rentNote": "Rent ?",
+   "safetyNote": "Estimate: busy Little Tokyo blocks. Walk it at night to confirm.",
+   "scores": {
+    "amenities": 8,
+    "baths": 7,
+    "bedrooms": 6,
+    "commute": 7,
+    "condition": 8,
+    "light": 6,
+    "living": 6,
+    "parking": 7,
+    "pets": 7,
+    "rent": 6,
+    "safety": 6
+   },
+   "source": "research",
+   "status": "scheduled",
+   "summary": "Not toured yet. Metro A/E line runs straight to 7th St/Metro Center by the office.",
+   "transitMin": 18,
+   "updatedAt": "2026-09-25T18:06:53.413Z",
+   "walkMin": 30
+  },
+  "bedtla": {
+   "address": "1120 W 6th St",
+   "amenities": [
+    "Grocery Outlet",
+    "Starbucks & Chipotle below",
+    "Offices / workspace",
+    "Resident parties with prizes",
+    "Pool & gym"
+   ],
+   "baths": 2,
+   "cons": [
+    "Kinda dark",
+    "Lower ceilings",
+    "2nd floor",
+    "$4,000+ unless 15-month lease"
+   ],
+   "createdAt": "2026-09-25T00:00:00Z",
+   "estimated": false,
+   "guessed": [
+    "rent",
+    "safety",
+    "parking",
+    "living"
+   ],
+   "link": "https://bedtla.com/",
+   "must": {
+    "baths": true,
+    "beds": true,
+    "laundry": true,
+    "parking": null,
+    "pets": true
+   },
+   "name": "BeDTLA",
+   "neighborhood": "Downtown / City West",
+   "notes": "From Ryan's notes.",
+   "parkingNote": "Not confirmed",
+   "petNote": "Dogs OK. No pet rent if they're ESAs",
+   "pros": [
+    "Really close to Jessie's office",
+    "Grocery Outlet, Starbucks, Chipotle downstairs",
+    "All bedrooms good size",
+    "Washer/dryer",
+    "No pet rent with ESA",
+    "Concrete floors"
+   ],
+   "rent": null,
+   "rentNote": "$4,000+ on 12-mo (lower at 15 mo)",
+   "safetyNote": "Estimate: 6th St near the Westlake border. Walk it at night to confirm.",
+   "scores": {
+    "amenities": 9,
+    "baths": 7,
+    "bedrooms": 9,
+    "commute": 10,
+    "condition": 7,
+    "light": 4,
+    "living": 6,
+    "parking": 6,
+    "pets": 9,
+    "rent": 6,
+    "safety": 5
+   },
+   "source": "tour",
+   "status": "toured",
+   "summary": "Walkable to the office with lots going on downstairs. Good bedrooms, but the unit runs dark with lower ceilings.",
+   "transitMin": null,
+   "updatedAt": "2026-09-25T00:00:00Z",
+   "walkMin": 13
+  },
+  "onyx-v547n": {
+   "address": "1249 S Grand Ave, Los Angeles, CA 90015",
+   "amenities": [
+    "Pool (likely)",
+    "Fitness center (likely)",
+    "Rooftop deck (possible)",
+    "Controlled access",
+    "Elevator",
+    "In-unit W/D (typical for building type)"
+   ],
+   "baths": null,
+   "commutes": {
+    "jessie": {
+     "transit": 10,
+     "walk": 15
+    }
+   },
+   "confidence": "low",
+   "cons": [
+    "3-bedroom units may be rare or nonexistent in this building type",
+    "Rent likely exceeds budget",
+    "Limited confirmed information",
+    "DTLA street conditions vary block to block"
+   ],
+   "createdAt": "2026-09-25T18:07:55.229Z",
+   "estimated": true,
+   "guessed": [
+    "bedrooms",
+    "light",
+    "rent",
+    "safety",
+    "living",
+    "baths",
+    "amenities",
+    "condition",
+    "commute",
+    "parking",
+    "pets"
+   ],
+   "link": "https://www.apartments.com/onyx-los-angeles-ca/8ever23/",
+   "must": {
+    "baths": null,
+    "beds": null,
+    "laundry": true,
+    "parking": null,
+    "pets": null
+   },
+   "name": "Onyx",
+   "neighborhood": "South Park / Downtown Los Angeles",
+   "notes": "",
+   "parkingNote": "Likely garage parking available for rent, typical of DTLA buildings, but unconfirmed.",
+   "petNote": "Many DTLA buildings allow dogs with fees/restrictions, but I cannot confirm for this property.",
+   "pros": [
+    "Central DTLA location",
+    "Close to Jessie's work (short commute)",
+    "Likely modern building amenities"
+   ],
+   "rent": null,
+   "rentNote": "Unknown; DTLA high-rises with 3-bed units typically run above this group's $4,500 budget, but I can't confirm actual pricing.",
+   "safetyNote": "South Park/DTLA has improved but still has areas with visible homelessness and mixed safety perceptions, especially at night; this varies by exact block.",
+   "scores": {
+    "amenities": 6,
+    "baths": 5,
+    "bedrooms": 4,
+    "commute": 9,
+    "condition": 6,
+    "light": 5,
+    "living": 5,
+    "parking": 5,
+    "pets": 5,
+    "rent": 6,
+    "safety": 5
+   },
+   "source": "research",
+   "status": "interested",
+   "summary": "Onyx is a mid-rise apartment community in South Park near Downtown LA, generally known for modern-style units close to LA Live and the Financial District. I cannot browse the listing, so specific details below are uncertain.",
+   "transitMin": 10,
+   "updatedAt": "2026-09-25T18:07:55.229Z",
+   "walkMin": 15
+  },
+  "tenten-wilshire": {
+   "address": "1010 Wilshire Blvd",
+   "amenities": [
+    "Two gyms",
+    "Pools & jacuzzis",
+    "Business center",
+    "Screening room",
+    "15,000 sq ft rooftop deck"
+   ],
+   "baths": 2.5,
+   "cons": [
+    "Translucent bedroom doors",
+    "No closets in two bedrooms",
+    "Small 3rd bedroom",
+    "Tight living room",
+    "Parking is across the street"
+   ],
+   "createdAt": "2026-09-25T00:00:00Z",
+   "estimated": false,
+   "guessed": [
+    "safety"
+   ],
+   "link": "https://www.tentenapartments.com/",
+   "must": {
+    "baths": true,
+    "beds": true,
+    "laundry": true,
+    "parking": true,
+    "pets": true
+   },
+   "name": "TenTen Wilshire",
+   "neighborhood": "Downtown / Westlake edge",
+   "notes": "",
+   "parkingNote": "For purchase, but in a structure across the street",
+   "petNote": "Dogs OK, low fees",
+   "pros": [
+    "~8 min walk to office",
+    "Under $4,000",
+    "2.5 baths",
+    "Clean, good condition",
+    "Best amenities of the group"
+   ],
+   "rent": null,
+   "rentNote": "Under $4,000",
+   "safetyNote": "Estimate: busy Wilshire corridor. Walk it at night to confirm.",
+   "scores": {
+    "amenities": 10,
+    "baths": 9,
+    "bedrooms": 3,
+    "commute": 10,
+    "condition": 7,
+    "light": 7,
+    "living": 4,
+    "parking": 5,
+    "pets": 8,
+    "rent": 10,
+    "safety": 6
+   },
+   "source": "tour",
+   "status": "toured",
+   "summary": "Big amenity building a short walk from the office. Great price and amenities, but the bedrooms are the weak spot.",
+   "transitMin": null,
+   "updatedAt": "2026-09-25T00:00:00Z",
+   "walkMin": 8
+  }
+ },
+ "config": {}
+}

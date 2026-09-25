@@ -266,26 +266,84 @@ function failures(a){
 /* ---------- store ---------- */
 function lsLoad(){try{return JSON.parse(localStorage.getItem('aptStore')||'{}')}catch(e){return{}}}
 function lsSave(){try{localStorage.setItem('aptStore',JSON.stringify({apts:state.apts,weights:state.weights,locs:state.locs,custom:state.custom}))}catch(e){}}
+/* Online workspace (Cloudflare Worker at /api) */
+let remoteRev=null,pollTimer=null;
+function passcode(){try{return localStorage.getItem('aptPass')||''}catch(e){return''}}
+async function api(method,path,body){
+  const r=await fetch(path,{method,cache:'no-store',headers:{'content-type':'application/json','x-passcode':passcode()},body:body?JSON.stringify(body):undefined});
+  if(r.status===401){state.mode='locked';render();throw{code:'locked'}}
+  if(r.status===204)return null;
+  if(!r.ok)throw{code:'http',status:r.status};
+  return r.json();
+}
+function applyRemote(d){
+  remoteRev=d.rev;const next={};for(const[id,doc]of Object.entries(d.apts||{}))next[id]={...doc,id};state.apts=next;
+  const c=d.config||{};
+  state.weights=c.weights?{...DEFAULT_W,...c.weights}:{...DEFAULT_W};
+  state.locs=c.locations&&Array.isArray(c.locations.list)&&c.locations.list.length?c.locations.list:DEFAULT_LOCS.map(l=>({...l}));
+  setCustom(c.factors&&c.factors.list);
+  $('wgrid').dataset.editing='0';
+}
+async function pull(){
+  if(state.mode!=='remote')return;
+  try{const d=await api('GET','/api/state?since='+(remoteRev??''));if(d){applyRemote(d);render()}setSync('Saved online · syncs across devices')}
+  catch(e){if(e.code!=='locked')setSync('Offline. Changes will not save until you reconnect.')}
+}
+function setSync(t){$('sync').textContent=t}
+async function remoteWrite(method,path,body){
+  try{await api(method,path,body);setSync('Saved online · syncs across devices')}
+  catch(e){if(e.code!=='locked')setSync('Couldn’t save that change. Check your connection and try again.')}
+}
+async function tryRemote(){
+  if(!/^https?:$/.test(location.protocol))return false;
+  try{
+    const d=await api('GET','/api/state');
+    if(!d)return false;
+    state.mode='remote';applyRemote(d);setSync('Saved online · syncs across devices');render();
+    clearInterval(pollTimer);pollTimer=setInterval(()=>{if(document.visibilityState==='visible')pull()},8000);
+    document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')pull()});
+    return true;
+  }catch(e){return e&&e.code==='locked'}
+}
+
+function lockForm(){
+  setSync('Locked');
+  const inp=h('input',{type:'password',id:'passcode',autocomplete:'current-password',placeholder:'Workspace passcode',style:'padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--surface-2);min-width:0;flex:1 1 200px'});
+  const msg=h('div',{class:'addmsg'},passcode()?'That passcode didn’t work.':'');
+  if(passcode())msg.classList.add('err');
+  const f=h('form',{class:'add',onsubmit:async e=>{e.preventDefault();try{localStorage.setItem('aptPass',inp.value.trim())}catch(_){}
+      msg.classList.remove('err');msg.textContent='Checking…';state.mode='loading';if(!(await tryRemote())){state.mode='locked';render();setSync('Couldn’t reach the workspace. Try again.')}}},
+    h('label',{class:'lbl',for:'passcode'},'Enter the workspace passcode'),
+    h('div',{class:'row'},inp,h('button',{class:'btn primary',type:'submit'},'Unlock')),msg);
+  setTimeout(()=>inp.focus(),0);
+  return f;
+}
 async function saveCustom(list){
   setCustom(list);render();
-  if(db)await db.doc('config/factors').set({list});else lsSave();
+  if(db)await db.doc('config/factors').set({list});
+  else if(state.mode==='remote')await remoteWrite('PUT','/api/config/factors',{list});else lsSave();
 }
 async function saveLocs(list){
   state.locs=list;render();
-  if(db)await db.doc('config/locations').set({list});else lsSave();
+  if(db)await db.doc('config/locations').set({list});
+  else if(state.mode==='remote')await remoteWrite('PUT','/api/config/locations',{list});else lsSave();
 }
 async function saveApt(id,data){
   data.updatedAt=new Date().toISOString();
   state.apts[id]={...data,id};render();
-  if(db){const body={...data};delete body.id;await db.collection('apartments').doc(id).set(body);}else lsSave();
+  const body={...data};delete body.id;
+  if(db)await db.collection('apartments').doc(id).set(body);
+  else if(state.mode==='remote')await remoteWrite('PUT','/api/apartments/'+encodeURIComponent(id),body);else lsSave();
 }
 async function deleteApt(id){
   delete state.apts[id];render();
-  if(db)await db.collection('apartments').doc(id).delete();else lsSave();
+  if(db)await db.collection('apartments').doc(id).delete();
+  else if(state.mode==='remote')await remoteWrite('DELETE','/api/apartments/'+encodeURIComponent(id));else lsSave();
 }
 async function saveWeights(w){
   state.weights={...w};render();
-  if(db)await db.doc('config/weights').set(w);else lsSave();
+  if(db)await db.doc('config/weights').set(w);
+  else if(state.mode==='remote')await remoteWrite('PUT','/api/config/weights',w);else lsSave();
 }
 function newId(name){
   const slug=String(name||'apt').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'').slice(0,40)||'apt';
@@ -303,6 +361,8 @@ async function boot(){
     db.doc('config/weights').onSnapshot(s=>{if(s.exists){state.weights={...DEFAULT_W,...s.data()};render();}},()=>{});
     db.doc('config/locations').onSnapshot(s=>{const l=s.exists&&s.data().list;if(Array.isArray(l)&&l.length){state.locs=l;render();}},()=>{});
     db.doc('config/factors').onSnapshot(s=>{if(s.exists){setCustom(s.data().list);$('wgrid').dataset.editing='0';render();}},()=>{});
+  }else if(await tryRemote()){
+    /* online workspace, or waiting on the passcode */
   }else{
     state.mode='local';const s=lsLoad();state.apts=s.apts||{};if(s.weights)state.weights={...DEFAULT_W,...s.weights};
     if(Array.isArray(s.locs)&&s.locs.length)state.locs=s.locs;
@@ -411,6 +471,7 @@ function render(){
   else note.textContent='';
   const list=$('list');list.replaceChildren();
   if(state.mode==='loading'){list.append(h('div',{class:'empty-state'},'Loading apartments…'));return}
+  if(state.mode==='locked'){list.append(lockForm());return}
   if(!items.length){list.append(h('div',{class:'empty-state'},state.tab==='toured'?'No toured apartments yet. After a tour, open the apartment and fill out the questionnaire.':'Nothing here yet. Add an apartment above.'));}
   items.forEach(({a,s,f},i)=>list.append(card(a,s,f,i+1)));
   renderWeights();
