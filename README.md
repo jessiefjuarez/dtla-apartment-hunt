@@ -14,20 +14,20 @@ A tracker for the apartments we're touring in downtown LA. It sorts places into 
 
 ## How saving works
 
-The site is a Cloudflare Worker () that serves the page from  and keeps all apartments, weights, work locations and custom factors in one Durable Object. Every browser reads and writes that same store and checks for changes every 8 seconds, so it works like a shared, living workspace.
+The site is a Cloudflare Worker (`src/worker.js`) that serves the page from `public/`. It keeps all apartments, weights, work locations and custom factors in one Durable Object. Every browser reads and writes that same store and checks for changes every 8 seconds, so it works like a shared, living workspace.
 
--  returns everything.  returns 204 if nothing changed.
--  /  saves or removes one apartment.
--  saves a setting.
--  fills the store the first time it runs.
+- `GET /api/state` returns everything. `GET /api/state?since=<rev>` returns 204 if nothing changed.
+- `PUT` or `DELETE /api/apartments/<id>` saves or removes one apartment.
+- `PUT /api/config/weights`, `/api/config/locations` and `/api/config/factors` save a setting.
+- `src/seed.json` fills the store the first time it runs.
 
-**Passcode (recommended):** anyone with the link can edit until you add a secret named  in Cloudflare (Worker → Settings → Variables and secrets). After that, the page asks for the passcode once per browser.
+**Passcode (recommended):** anyone with the link can edit until you add a secret named `PASSCODE` in Cloudflare (Worker → Settings → Variables and secrets). After that, the page asks for the passcode once per browser.
 
 ## Files
 
--  is the page served by the Worker.
--  is the same page as published on Claude, where it uses Claude's storage and research instead.
--  is the Worker config. Pushing to  redeploys through Cloudflare Workers Builds.
+- `public/index.html` is the page served by the Worker.
+- `artifact.html` is the same page as published on Claude, where it uses Claude's storage and research instead.
+- `wrangler.jsonc` is the Worker config. Pushing to `main` redeploys through Cloudflare Workers Builds.
 
 ## Live version
 
