@@ -242,6 +242,9 @@ const BASE_FACTORS=[
 ];
 let FACTORS=BASE_FACTORS.slice();
 function setCustom(list){state.custom=Array.isArray(list)?list:[];FACTORS=[...BASE_FACTORS,...state.custom.map(c=>({k:c.k,label:c.label,desc:c.desc||'',custom:true}))]}
+// Bathroom count -> score. 3 full baths means one per roommate.
+const BATH_OPTS=[['1','1',2],['1.5','1.5',4],['2','2',7],['2.5','2.5',9],['3','3',10],['3.5','3.5',10],['4','4+',10]];
+const bathScore=n=>n==null?null:n>=3?10:n>=2.5?9:n>=2?7:n>=1.5?4:2;
 const GEN=[['great','Great',10],['good','Good',8],['okay','Okay',6],['poor','Poor',4],['bad','Bad',2]];
 const DEFAULT_W={bedrooms:20,light:15,rent:10,safety:10,living:10,baths:10,amenities:5,condition:5,commute:5,parking:5,pets:5};
 const STATUS={toured:'Toured',scheduled:'To tour',interested:'Looks nice'};
@@ -559,6 +562,13 @@ function detail(a){
   const ul=(arr)=>arr&&arr.length?h('ul',null,arr.map(x=>h('li',null,x))):h('div',{class:'empty'},'None noted');
   const moveSel=h('select',{'aria-label':'Move to category',onchange:async e=>{const v=e.target.value;if(!v)return;await saveApt(a.id,{...a,status:v});}},
     h('option',{value:''},'Move to…'),...Object.entries(STATUS).filter(([k])=>k!==a.status).map(([k,l])=>h('option',{value:k},l)));
+  const bathSel=h('select',{'aria-label':'Number of bathrooms',onchange:async e=>{
+      const n=parseFloat(e.target.value);if(isNaN(n))return;
+      const upd={...a,baths:n,scores:{...a.scores,baths:bathScore(n)},guessed:(a.guessed||[]).filter(k=>k!=='baths'),must:{...(a.must||{}),baths:n>=2}};
+      if(a.tour)upd.tour={...a.tour,baths:String(n)};
+      await saveApt(a.id,upd);}},
+    h('option',{value:''},a.baths!=null?`Bathrooms: ${a.baths}`:'Set bathrooms…'),
+    ...BATH_OPTS.map(([v,l])=>h('option',{value:v},l+(v==='1'?' bath':' baths'))));
   const delWrap=h('span',null);
   const delBtn=h('button',{class:'btn small danger',onclick:()=>{delWrap.replaceChildren(h('span',{class:'tabnote'},'Delete '+a.name+'? '),
     h('button',{class:'btn small danger',onclick:()=>deleteApt(a.id)},'Yes, delete'),' ',h('button',{class:'btn small',onclick:()=>render()},'Cancel'))}},'Delete');
@@ -580,7 +590,7 @@ function detail(a){
     h('div',{class:'actions'},
       h('button',{class:'btn small primary',onclick:()=>openQuiz(a)},a.estimated?'Tour questionnaire':'Edit tour answers'),
       h('button',{class:'btn small',onclick:()=>openApp(a)},a.application?'Update application':'Track application'),
-      moveSel,a.link?h('a',{href:a.link,target:'_blank',rel:'noopener'},'Open listing ↗'):null,delWrap));
+      bathSel,moveSel,a.link?h('a',{href:a.link,target:'_blank',rel:'noopener'},'Open listing ↗'):null,delWrap));
 }
 
 /* ---------- weights ---------- */
@@ -600,7 +610,7 @@ const Q={
   safety:{l:'How did the surrounding blocks feel?',o:[['safe','Safe day & night',10],['day','Fine by day, unsure at night',7],['some','Some concerns',4],['unsafe','Felt unsafe',2]]},
   living:{l:'Main living room & kitchen size',o:[['spacious','Spacious',9],['comfortable','Comfortable',7],['tight','Tight',4],['toosmall','Too small',2]]},
   bedrooms:{l:'Bedrooms overall',o:[['allgood','All good size',9],['twogood','2 good, 1 weak',6],['small','Mostly small',4],['poor','Poor',2]]},
-  baths:{l:'Bathrooms',o:[['1','1',2],['1.5','1.5',4],['2','2',7],['2.5','2.5',9],['3','3+',10]]},
+  baths:{l:'How many bathrooms?',o:BATH_OPTS},
   condition:{l:'Condition & finishes',o:[['excellent','Excellent',10],['good','Good',8],['worn','Worn',5],['rough','Rough',2]]},
   amenities:{l:'Amenities',o:[['great','Great',10],['good','Good',8],['basic','Basic',5],['none','Few / none',2]]},
   parking:{l:'Parking',o:[['incl','In building, included',10],['paid','In building, paid',8],['offsite','Off-site / across street',5],['street','Street only',3],['none','None',1]]},
