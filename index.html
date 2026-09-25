@@ -1,0 +1,777 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>DTLA Apartment Hunt</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Overpass:wght@400;600;800&family=Overpass+Mono:wght@500;700&display=swap">
+<style>
+:root{
+  --bg:#EDEFEA; --surface:#FFFFFF; --surface-2:#F6F7F4; --ink:#17201B; --muted:#58655D; --line:#D3D9D2;
+  --sign:#1D5C44; --sign-ink:#FFFFFF; --chip:#E3E8E1;
+  --warn:#8A5A0F; --warn-bg:#FAEFD6; --bad:#A3342A; --bad-bg:#F7E1DD; --good:#23704A; --good-bg:#DDEFE3;
+  --bar:#1D5C44; --shadow:0 1px 2px rgba(20,30,25,.06),0 4px 14px rgba(20,30,25,.05);
+  --display:"Overpass","Arial Narrow",Arial,sans-serif; --mono:"Overpass Mono",ui-monospace,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  color-scheme:dark;
+  --bg:#101512; --surface:#18201B; --surface-2:#1D2620; --ink:#E4EBE6; --muted:#9AA79F; --line:#2B3530;
+  --sign:#237356; --sign-ink:#FFFFFF; --chip:#242E28;
+  --warn:#E6B45C; --warn-bg:#3A2E15; --bad:#EE8A7E; --bad-bg:#3B201C; --good:#6FCF97; --good-bg:#17301F;
+  --bar:#3FA07A; --shadow:none;
+}}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --bg:#101512; --surface:#18201B; --surface-2:#1D2620; --ink:#E4EBE6; --muted:#9AA79F; --line:#2B3530;
+  --sign:#237356; --sign-ink:#FFFFFF; --chip:#242E28;
+  --warn:#E6B45C; --warn-bg:#3A2E15; --bad:#EE8A7E; --bad-bg:#3B201C; --good:#6FCF97; --good-bg:#17301F;
+  --bar:#3FA07A; --shadow:none;
+}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--display);font-size:15px;line-height:1.45;padding-inline:16px;padding-block:20px 48px}
+.wrap{max-width:920px;margin:0 auto;display:flex;flex-direction:column;gap:20px}
+h1,h2,h3{margin:0;text-wrap:balance}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--bar);outline-offset:2px}
+.num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+
+/* header */
+header.top{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:12px}
+.title{display:flex;flex-direction:column;gap:6px}
+h1{font-size:clamp(26px,5vw,36px);font-weight:800;letter-spacing:-.01em;line-height:1.05}
+.office{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;color:var(--muted);font-size:13px}
+.hside{display:flex;flex-direction:column;align-items:flex-end;gap:6px}
+.hbtns{display:flex;gap:8px;flex-wrap:wrap}
+.locrow{display:grid;grid-template-columns:1fr 2fr auto;gap:8px;align-items:center}
+.locrow input{padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--surface-2);min-width:0;width:100%}
+.prow{display:flex;flex-direction:column;gap:5px;padding-block:8px;border-bottom:1px solid var(--line)}
+.prow .ql{font-weight:600}
+.preview{background:var(--surface-2);border:1px solid var(--line);border-radius:8px;padding:12px;display:flex;flex-direction:column;gap:8px;font-size:13.5px}
+.preview .wl{display:flex;flex-wrap:wrap;gap:4px 12px}
+@media (max-width:560px){.hside{align-items:flex-start}.locrow{grid-template-columns:1fr auto}.locrow input.addr{grid-column:1 / -1;grid-row:2}}
+.office .plate{font-size:12px;padding:3px 8px}
+.sync{font-size:12px;color:var(--muted)}
+
+/* LA street-sign plate */
+.plate{display:inline-block;background:var(--sign);color:var(--sign-ink);font-weight:800;letter-spacing:.02em;border-radius:5px;padding:4px 10px;box-shadow:inset 0 0 0 1.5px rgba(255,255,255,.75),inset 0 0 0 3px var(--sign);line-height:1.2;max-width:100%;overflow-wrap:anywhere}
+
+/* add bar */
+.add{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px;display:flex;flex-direction:column;gap:10px;box-shadow:var(--shadow)}
+.add label.lbl{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:600}
+.add .row{display:flex;flex-wrap:wrap;gap:8px}
+.add input[type=text]{flex:1 1 260px;min-width:0;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--surface-2)}
+.add select{padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--surface-2)}
+.btn{padding:10px 14px;border-radius:8px;border:1px solid var(--line);background:var(--surface-2);font-weight:600}
+.btn.primary{background:var(--sign);border-color:var(--sign);color:var(--sign-ink)}
+.btn.danger{color:var(--bad);border-color:var(--bad)}
+.btn.small{padding:6px 10px;font-size:13px}
+.btn:disabled{opacity:.55;cursor:default}
+.addmsg{font-size:13px;color:var(--muted);min-height:1.2em}
+.addmsg.err{color:var(--bad)}
+
+/* tabs */
+.tabs{display:flex;gap:6px;flex-wrap:wrap;border-bottom:1px solid var(--line);padding-bottom:0}
+.tab{background:none;border:0;border-bottom:3px solid transparent;padding:8px 12px 9px;font-weight:600;color:var(--muted);display:inline-flex;gap:6px;align-items:center}
+.tab[aria-selected=true]{color:var(--ink);border-bottom-color:var(--bar)}
+.tab .count{font-family:var(--mono);font-size:12px;background:var(--chip);border-radius:10px;padding:1px 7px}
+.tabnote{font-size:13px;color:var(--muted)}
+
+/* list */
+.list{display:flex;flex-direction:column;gap:10px}
+.apt{background:var(--surface);border:1px solid var(--line);border-radius:10px;box-shadow:var(--shadow)}
+.apt.fail{opacity:.82}
+.apt-head{display:grid;grid-template-columns:44px 1fr auto;gap:14px;align-items:center;padding:14px;width:100%;text-align:left;background:none;border:0;border-radius:10px}
+.rank{font-family:var(--mono);font-weight:700;font-size:26px;color:var(--muted);text-align:center}
+.apt-main{display:flex;flex-direction:column;gap:7px;min-width:0}
+.line1{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.chip{font-size:11.5px;font-weight:600;letter-spacing:.03em;text-transform:uppercase;background:var(--chip);color:var(--muted);border-radius:4px;padding:2px 7px}
+.chip.warn{background:var(--warn-bg);color:var(--warn)}
+.chip.bad{background:var(--bad-bg);color:var(--bad)}
+.chip.good{background:var(--good-bg);color:var(--good)}
+.facts{font-size:13.5px;color:var(--muted);display:flex;flex-wrap:wrap;gap:4px 14px}
+.bar{height:6px;background:var(--chip);border-radius:3px;overflow:hidden}
+.bar i{display:block;height:100%;background:var(--bar);border-radius:3px}
+.score{text-align:right}
+.score b{font-family:var(--mono);font-size:28px;font-weight:700;line-height:1}
+.score small{display:block;font-size:11px;color:var(--muted);letter-spacing:.06em;text-transform:uppercase}
+.musts{display:flex;flex-wrap:wrap;gap:5px}
+.must{font-size:12px;border:1px solid var(--line);border-radius:4px;padding:1px 6px;color:var(--muted)}
+.must.y{border-color:transparent;background:var(--good-bg);color:var(--good)}
+.must.n{border-color:transparent;background:var(--bad-bg);color:var(--bad)}
+
+.detail{border-top:1px solid var(--line);padding:14px;display:flex;flex-direction:column;gap:16px}
+.detail .summary{color:var(--muted);max-width:65ch}
+.breakdown{overflow-x:auto}
+.breakdown table{width:100%;border-collapse:collapse;font-size:13.5px}
+.breakdown th{font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);text-align:left;font-weight:600;padding:4px 8px;border-bottom:1px solid var(--line)}
+.breakdown td{padding:6px 8px;border-bottom:1px solid var(--line)}
+.breakdown td.r,.breakdown th.r{text-align:right}
+.breakdown tr.guess td:nth-child(3){color:var(--warn)}
+.minibar{width:80px;height:5px;background:var(--chip);border-radius:3px;overflow:hidden;display:inline-block;vertical-align:middle}
+.minibar i{display:block;height:100%;background:var(--bar)}
+.pc{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.pc h3{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:6px}
+.pc ul{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:3px}
+.pc .empty{color:var(--muted);font-size:13px}
+.actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.actions select{padding:6px 8px;border:1px solid var(--line);border-radius:8px;background:var(--surface-2);font-size:13px}
+.actions a{font-size:13px;color:var(--bar);font-weight:600}
+.empty-state{padding:28px 16px;text-align:center;color:var(--muted);background:var(--surface);border:1px dashed var(--line);border-radius:10px}
+
+/* weights */
+details.weights{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
+details.weights summary{cursor:pointer;font-weight:600}
+.wgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px 14px;margin-top:12px}
+.wgrid label{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:13.5px}
+.wgrid input{width:64px;padding:5px 6px;border:1px solid var(--line);border-radius:6px;background:var(--surface-2);text-align:right;font-family:var(--mono)}
+.wfoot{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-top:12px;font-size:13px}
+.rules{font-size:13px;color:var(--muted);margin-top:10px;max-width:70ch}
+
+/* modal */
+.overlay{position:fixed;inset:0;background:rgba(10,15,12,.55);display:flex;align-items:flex-start;justify-content:center;padding:max(16px,env(safe-area-inset-top,0px)) 16px 16px;overflow-y:auto;z-index:10}
+.modal{background:var(--surface);border-radius:12px;width:100%;max-width:640px;padding:18px;display:flex;flex-direction:column;gap:16px;margin-block:12px}
+.modal h2{font-size:20px;font-weight:800}
+.q{display:flex;flex-direction:column;gap:6px}
+.q > .ql{font-weight:600;font-size:14px}
+.q .hint{font-size:12.5px;color:var(--muted)}
+.opts{display:flex;flex-wrap:wrap;gap:6px}
+.opts label{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:8px;padding:6px 10px;font-size:13.5px;cursor:pointer;background:var(--surface-2)}
+.opts input{accent-color:var(--sign)}
+.opts label:has(input:checked){border-color:var(--sign);background:var(--good-bg)}
+.q input[type=number],.q input[type=date],.q textarea{padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--surface-2);width:100%}
+.q textarea{min-height:70px;resize:vertical}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.three{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.mfoot{display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;position:sticky;bottom:0;background:var(--surface);padding-top:8px}
+.section-lbl{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:600;border-top:1px solid var(--line);padding-top:12px}
+
+@media (max-width:560px){
+  .apt-head{grid-template-columns:30px 1fr auto;gap:10px;padding:12px}
+  .rank{font-size:20px}
+  .score b{font-size:22px}
+  .pc,.two{grid-template-columns:1fr}
+  .three{grid-template-columns:1fr 1fr}
+}
+@media (prefers-reduced-motion:no-preference){.bar i,.minibar i{transition:width .4s ease}}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header class="top">
+    <div class="title">
+      <h1>DTLA Apartment Hunt</h1>
+      <div class="office" id="office"></div>
+    </div>
+    <div class="hside">
+      <div class="hbtns"><button class="btn small" id="locbtn">Work locations</button><button class="btn small" id="priobtn">Adjust priorities</button></div>
+      <div class="sync" id="sync">Connecting…</div>
+    </div>
+  </header>
+
+  <section class="add" aria-labelledby="addlbl">
+    <label class="lbl" id="addlbl" for="q">Add an apartment: name or listing link</label>
+    <div class="row">
+      <input type="text" id="q" placeholder="e.g. The Hill at Whittier, or https://www.apartments.com/…" autocomplete="off">
+      <select id="qstatus" aria-label="Category">
+        <option value="interested">Looks nice</option>
+        <option value="scheduled">To tour</option>
+        <option value="toured">Toured</option>
+      </select>
+      <button class="btn primary" id="addbtn">Research &amp; rank</button>
+      <button class="btn" id="stopbtn" hidden>Stop</button>
+    </div>
+    <div class="addmsg" id="addmsg">Claude looks up the building, estimates each factor, and places it in the ranking. Fill out the tour questionnaire after you visit to replace the estimates.</div>
+  </section>
+
+  <nav class="tabs" role="tablist" id="tabs"></nav>
+  <div class="tabnote" id="tabnote"></div>
+  <div class="list" id="list"><div class="empty-state">Loading apartments…</div></div>
+
+  <details class="weights" id="weights">
+    <summary>Scoring weights</summary>
+    <div class="wgrid" id="wgrid"></div>
+    <div class="wfoot"><span>Total: <b class="num" id="wtotal">100</b>%</span><button class="btn small primary" id="wsave">Save weights</button><button class="btn small" id="wreset">Reset to default</button><span id="wmsg" class="tabnote"></span></div>
+    <p class="rules">Each factor is scored 1–10, then weighted into a score out of 100. Rent: $4,000 or less scores best, up to $4,500 is fine, and over $4,500 drops hard. Block safety is how the streets around the building feel day and night. Check the LAPD crime map and walk the block after dark before signing. Commute passes at under 25 min walking or under 30 min on transit. Apartments that miss a must-have sink to the bottom of their list. Amber scores are estimates or placeholders.</p>
+  </details>
+</div>
+
+<div id="modalroot"></div>
+
+<script>
+(function(){
+const BASE_FACTORS=[
+  {k:'bedrooms',label:'Bedrooms'},{k:'light',label:'Light & ceilings'},{k:'rent',label:'Rent'},
+  {k:'safety',label:'Block safety'},{k:'living',label:'Living room'},{k:'baths',label:'Bathrooms'},{k:'amenities',label:'Amenities'},
+  {k:'condition',label:'Condition'},{k:'commute',label:'Commute'},{k:'parking',label:'Parking'},{k:'pets',label:'Pets'}
+];
+let FACTORS=BASE_FACTORS.slice();
+function setCustom(list){state.custom=Array.isArray(list)?list:[];FACTORS=[...BASE_FACTORS,...state.custom.map(c=>({k:c.k,label:c.label,desc:c.desc||'',custom:true}))]}
+const GEN=[['great','Great',10],['good','Good',8],['okay','Okay',6],['poor','Poor',4],['bad','Bad',2]];
+const DEFAULT_W={bedrooms:20,light:15,rent:10,safety:10,living:10,baths:10,amenities:5,condition:5,commute:5,parking:5,pets:5};
+const STATUS={toured:'Toured',scheduled:'To tour',interested:'Looks nice'};
+const MUSTS=[['beds','3 bd'],['baths','2+ ba'],['pets','Pets'],['parking','Parking'],['laundry','W/D']];
+
+const DEFAULT_LOCS=[{id:'jessie',name:'Jessie',address:'801 S Figueroa St, Los Angeles, CA 90017'}];
+const state={apts:{},weights:{...DEFAULT_W},locs:DEFAULT_LOCS.map(l=>({...l})),custom:[],tab:'toured',open:{},mode:'loading'};
+try{const t=localStorage.getItem('aptTab');if(t)state.tab=t;}catch(e){}
+
+let db=null,sample=null;
+const $=id=>document.getElementById(id);
+function h(tag,attrs,...kids){
+  const el=document.createElement(tag);
+  if(attrs)for(const[k,v]of Object.entries(attrs)){
+    if(v==null||v===false)continue;
+    if(k==='class')el.className=v;
+    else if(k.startsWith('on'))el.addEventListener(k.slice(2),v);
+    else if(k==='style')el.setAttribute('style',v);
+    else el.setAttribute(k,v===true?'':v);
+  }
+  for(const c of kids.flat()){if(c==null||c===false)continue;el.append(c.nodeType?c:document.createTextNode(String(c)));}
+  return el;
+}
+const clamp=(n,a,b)=>Math.max(a,Math.min(b,n));
+const money=n=>'$'+Math.round(n).toLocaleString('en-US');
+
+/* ---------- scoring ---------- */
+function rentScore(r){
+  if(r==null||isNaN(r))return 6;
+  if(r<=3600)return 10; if(r<=4000)return 9; if(r<=4250)return 7; if(r<=4500)return 6; if(r<=4800)return 3; return 1;
+}
+function commuteScore(walk,transit){
+  if(walk!=null&&walk<=10)return 10; if(walk!=null&&walk<=15)return 9; if(walk!=null&&walk<=25)return 8;
+  if(transit!=null&&transit<=20)return 7; if(transit!=null&&transit<=30)return 5;
+  if(walk==null&&transit==null)return 5; return 2;
+}
+function getC(a,loc){
+  const c=a.commutes&&a.commutes[loc.id];if(c)return c;
+  if(loc.id==='jessie'&&(a.walkMin!=null||a.transitMin!=null))return{walk:a.walkMin??null,transit:a.transitMin??null};
+  return null;
+}
+const known=c=>!!c&&(c.walk!=null||c.transit!=null);
+function passes(c){if(!known(c))return null;return (c.walk!=null&&c.walk<=25)||(c.transit!=null&&c.transit<=30)}
+function commuteAvg(a){
+  const ss=state.locs.map(l=>getC(a,l)).filter(known).map(c=>commuteScore(c.walk,c.transit));
+  return ss.length?Math.round(ss.reduce((x,y)=>x+y,0)/ss.length*10)/10:5;
+}
+const commuteUnknown=a=>state.locs.some(l=>!known(getC(a,l)));
+function fscore(a,k){if(k==='commute')return commuteAvg(a);return a.scores&&typeof a.scores[k]==='number'?a.scores[k]:5}
+function total(a,w,fs){
+  w=w||state.weights;let s=0;for(const f of (fs||FACTORS))s+=(w[f.k]||0)*fscore(a,f.k)/10;
+  return Math.round(s*10)/10;
+}
+function failures(a){
+  const out=[];const m=a.must||{};
+  for(const[k,l]of MUSTS)if(m[k]===false)out.push(l);
+  for(const l of state.locs)if(passes(getC(a,l))===false)out.push('Commute ('+l.name+')');
+  return out;
+}
+
+/* ---------- store ---------- */
+function lsLoad(){try{return JSON.parse(localStorage.getItem('aptStore')||'{}')}catch(e){return{}}}
+function lsSave(){try{localStorage.setItem('aptStore',JSON.stringify({apts:state.apts,weights:state.weights,locs:state.locs,custom:state.custom}))}catch(e){}}
+async function saveCustom(list){
+  setCustom(list);render();
+  if(db)await db.doc('config/factors').set({list});else lsSave();
+}
+async function saveLocs(list){
+  state.locs=list;render();
+  if(db)await db.doc('config/locations').set({list});else lsSave();
+}
+async function saveApt(id,data){
+  data.updatedAt=new Date().toISOString();
+  state.apts[id]={...data,id};render();
+  if(db){const body={...data};delete body.id;await db.collection('apartments').doc(id).set(body);}else lsSave();
+}
+async function deleteApt(id){
+  delete state.apts[id];render();
+  if(db)await db.collection('apartments').doc(id).delete();else lsSave();
+}
+async function saveWeights(w){
+  state.weights={...w};render();
+  if(db)await db.doc('config/weights').set(w);else lsSave();
+}
+function newId(name){
+  const slug=String(name||'apt').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'').slice(0,40)||'apt';
+  return slug+'-'+Math.random().toString(36).slice(2,7);
+}
+
+async function boot(){
+  const c=window.claude;
+  try{db=c&&c.use?await c.use('db'):null}catch(e){db=null}
+  if(db){
+    state.mode='db';$('sync').textContent='Saved and shared with anyone you give access';
+    db.collection('apartments').onSnapshot(snap=>{
+      const next={};snap.docs.forEach(d=>{next[d.id]={...d.data(),id:d.id}});state.apts=next;render();
+    },e=>{$('sync').textContent='Live updates stopped. Reload to reconnect.'});
+    db.doc('config/weights').onSnapshot(s=>{if(s.exists){state.weights={...DEFAULT_W,...s.data()};render();}},()=>{});
+    db.doc('config/locations').onSnapshot(s=>{const l=s.exists&&s.data().list;if(Array.isArray(l)&&l.length){state.locs=l;render();}},()=>{});
+    db.doc('config/factors').onSnapshot(s=>{if(s.exists){setCustom(s.data().list);$('wgrid').dataset.editing='0';render();}},()=>{});
+  }else{
+    state.mode='local';const s=lsLoad();state.apts=s.apts||{};if(s.weights)state.weights={...DEFAULT_W,...s.weights};
+    if(Array.isArray(s.locs)&&s.locs.length)state.locs=s.locs;
+    setCustom(s.custom);
+    $('sync').textContent='Saving in this browser only';render();
+  }
+  try{sample=c&&c.use?await c.use('sample'):null}catch(e){sample=null}
+  if(!sample){$('addbtn').textContent='Add';$('addmsg').textContent='Research isn’t available in this view. Added apartments start with placeholder scores; fill out the questionnaire to rank them.';}
+}
+
+/* ---------- research ---------- */
+let ctl=null;
+function researchPrompt(q){
+  return `You are helping a group of roommates rank apartments in Los Angeles.
+Where the roommates work:
+${state.locs.map(l=>`- ${l.name} (id "${l.id}"): ${l.address}`).join('\n')}
+Must-haves: 3 bedrooms, 2+ bathrooms, dogs allowed, parking available to rent, in-unit washer/dryer.
+Budget: up to $4,500/month total for the unit on a 12-month lease (under $4,000 preferred).
+
+Identify this apartment building and describe it from what you know: "${q.replace(/"/g,"'")}"
+If it is a URL, infer the property from the URL. You cannot browse, so rely on your knowledge and say so through low confidence and nulls. Never invent prices; use null when unsure.
+
+Reply with only one JSON object in this shape:
+{"name":"Building name","address":"street address or null","neighborhood":"string or null","summary":"1-2 plain sentences",
+"rentEstimate":number or null (typical monthly rent for a 3-bed, whole unit),"rentNote":"short note on price, e.g. '3bd from ~$4,200'",
+"beds3Available":true/false/null,"baths":number or null (for a 3-bed),"petsAllowed":true/false/null,"petNote":"string or null",
+"parkingAvailable":true/false/null,"parking":"short note","washerDryer":true/false/null,
+"amenities":["up to 8 short items"],
+"commutes":[{"id":"work location id","walkMin":number or null,"transitMin":number or null (door-to-door, weekday morning)}] (one entry per work location),
+"pros":["up to 5 short items"],"cons":["up to 5 short items"],
+"safetyNote":"1 sentence on how the surrounding blocks feel day and night, or null",
+"scores":{"bedrooms":1-10,"light":1-10,"safety":1-10 (surrounding blocks, day and night),"living":1-10,"baths":1-10,"amenities":1-10,"condition":1-10,"parking":1-10,"pets":1-10${state.custom.map(c=>`,"${c.k}":1-10 (${c.label.replace(/"/g,"'")}${c.desc?': '+c.desc.replace(/"/g,"'"):''})`).join('')}},
+"confidence":"high"|"medium"|"low"}
+Scores are pre-tour estimates from the building's reputation and floor plans; use 5 when you have no basis.`;
+}
+function num(v){const n=typeof v==='number'?v:parseFloat(v);return isFinite(n)?n:null}
+function bool(v){return v===true?true:v===false?false:null}
+async function onAdd(){
+  const q=$('q').value.trim();if(!q){$('q').focus();return}
+  const status=$('qstatus').value;const isUrl=/^https?:\/\//i.test(q);
+  const msg=$('addmsg');msg.classList.remove('err');
+  if(!sample){
+    const base=blankApt(isUrl?'New apartment':q,status);if(isUrl)base.link=q;
+    await saveApt(newId(base.name),base);$('q').value='';msg.textContent='Added. Open it and fill out the questionnaire to score it.';
+    setTab(status);return;
+  }
+  ctl=new AbortController();$('addbtn').disabled=true;$('stopbtn').hidden=false;
+  msg.textContent='Researching… this can take up to a minute.';
+  try{
+    const r=await sample.json(researchPrompt(q),{signal:ctl.signal,modelTier:'default',onText:()=>{msg.textContent='Writing up the results…'}});
+    if(!r||typeof r!=='object'||!r.name)throw{code:'invalid_json'};
+    const sc=r.scores||{};const rent=num(r.rentEstimate);
+    const commutes={};(Array.isArray(r.commutes)?r.commutes:[]).forEach(c=>{if(c&&state.locs.some(l=>l.id===c.id))commutes[c.id]={walk:num(c.walkMin),transit:num(c.transitMin)}});
+    const walk=commutes.jessie?commutes.jessie.walk:null,transit=commutes.jessie?commutes.jessie.transit:null;
+    const scores={};for(const f of FACTORS)scores[f.k]=clamp(Math.round(num(sc[f.k])??5),1,10);
+    scores.rent=rentScore(rent);
+    const baths=num(r.baths);
+    const apt={name:String(r.name).slice(0,80),link:isUrl?q:null,address:r.address||null,neighborhood:r.neighborhood||null,
+      status,summary:r.summary||'',rent,rentNote:r.rentNote||null,baths,walkMin:walk,transitMin:transit,
+      parkingNote:r.parking||null,petNote:r.petNote||null,safetyNote:r.safetyNote||null,amenities:Array.isArray(r.amenities)?r.amenities.slice(0,8).map(String):[],
+      pros:Array.isArray(r.pros)?r.pros.slice(0,6).map(String):[],cons:Array.isArray(r.cons)?r.cons.slice(0,6).map(String):[],
+      notes:'',scores,guessed:FACTORS.map(f=>f.k),estimated:true,confidence:r.confidence||'low',source:'research',
+      must:{beds:bool(r.beds3Available),baths:baths==null?null:baths>=2,pets:bool(r.petsAllowed),parking:bool(r.parkingAvailable),laundry:bool(r.washerDryer)},
+      commutes,createdAt:new Date().toISOString()};
+    apt.scores.commute=commuteAvg(apt);
+    const id=newId(apt.name);await saveApt(id,apt);state.open[id]=true;
+    $('q').value='';msg.textContent=`Added ${apt.name} (${r.confidence||'low'} confidence). Scores are estimates until you tour.`;
+    setTab(status);
+  }catch(e){
+    const code=e&&e.code;
+    if(code==='cancelled')msg.textContent='Stopped.';
+    else{msg.classList.add('err');msg.textContent=
+      code==='not_granted'||code==='sampling_disabled'?'Research needs permission to use Claude. Reload and allow it to try again.':
+      code==='rate_limited'?'Too many lookups right now. Try again in a few minutes.':
+      code==='invalid_json'?'Couldn’t read the result. Try again, or use the building’s full name.':
+      'Research failed. Check the name and try again.';}
+  }finally{$('addbtn').disabled=false;$('stopbtn').hidden=true;ctl=null}
+}
+function blankApt(name,status){
+  const scores={};FACTORS.forEach(f=>scores[f.k]=5);
+  return{name,status,link:null,address:null,summary:'',rent:null,baths:null,walkMin:null,transitMin:null,amenities:[],pros:[],cons:[],notes:'',
+    scores,guessed:FACTORS.map(f=>f.k),estimated:true,source:'manual',must:{beds:null,baths:null,pets:null,parking:null,laundry:null},createdAt:new Date().toISOString()};
+}
+
+/* ---------- render ---------- */
+function setTab(t){state.tab=t;try{localStorage.setItem('aptTab',t)}catch(e){}render()}
+function sorted(list){
+  return list.map(a=>({a,s:total(a),f:failures(a)})).sort((x,y)=>(x.f.length>0)-(y.f.length>0)||y.s-x.s);
+}
+function renderOffice(){
+  $('office').replaceChildren('Work:',...state.locs.map(l=>h('span',{class:'plate',title:l.address},l.name+' · '+l.address.split(',')[0])),
+    h('span',null,'· Must-haves: 3 bd · 2+ ba · pets · parking · W/D'));
+}
+function render(){
+  renderOffice();
+  const all=Object.values(state.apts);
+  const tabs=$('tabs');tabs.replaceChildren();
+  for(const[t,l]of[['toured','Toured'],['scheduled','To tour'],['interested','Looks nice'],['all','All'],['apps','Applications']]){
+    const n=t==='all'?all.length:t==='apps'?all.filter(a=>a.application).length:all.filter(a=>a.status===t).length;
+    tabs.append(h('button',{class:'tab',role:'tab','aria-selected':String(state.tab===t),onclick:()=>setTab(t)},l,h('span',{class:'count'},n)));
+  }
+  if(state.tab==='apps'){renderApps(all);renderWeights();return}
+  const items=sorted(state.tab==='all'?all:all.filter(a=>a.status===state.tab));
+  const note=$('tabnote');
+  if(items.length){const top=items[0];note.textContent=`Top pick: ${top.a.name} at ${top.s}${top.a.estimated?' (estimated)':''}.`+(state.tab==='toured'?' Ranked on your tour answers.':state.tab==='all'?' Estimates and tour scores mixed.':' Ranked on pre-tour estimates.');}
+  else note.textContent='';
+  const list=$('list');list.replaceChildren();
+  if(state.mode==='loading'){list.append(h('div',{class:'empty-state'},'Loading apartments…'));return}
+  if(!items.length){list.append(h('div',{class:'empty-state'},state.tab==='toured'?'No toured apartments yet. After a tour, open the apartment and fill out the questionnaire.':'Nothing here yet. Add an apartment above.'));}
+  items.forEach(({a,s,f},i)=>list.append(card(a,s,f,i+1)));
+  renderWeights();
+}
+function factsLine(a){
+  const bits=[];
+  bits.push(a.rent!=null?money(a.rent)+'/mo':(a.rentNote||'Rent ?'));
+  if(a.baths!=null)bits.push('3 bd / '+a.baths+' ba');
+  for(const l of state.locs){
+    const c=getC(a,l);let t='?';
+    if(known(c))t=c.walk!=null&&(c.walk<=25||c.transit==null)?c.walk+' min walk':c.transit+' min transit';
+    bits.push(l.name+': '+t);
+  }
+  if(a.address)bits.push(a.address);
+  return bits;
+}
+function card(a,s,f,rank){
+  const open=!!state.open[a.id];
+  const head=h('button',{class:'apt-head','aria-expanded':String(open),onclick:()=>{state.open[a.id]=!open;render()}},
+    h('div',{class:'rank'},f.length?'–':rank),
+    h('div',{class:'apt-main'},
+      h('div',{class:'line1'},h('span',{class:'plate'},a.name),
+        state.tab==='all'?h('span',{class:'chip'},STATUS[a.status]||a.status):null,
+        a.estimated?h('span',{class:'chip warn'},'Estimated'):h('span',{class:'chip good'},'Tour scored'),
+        a.application?h('span',{class:'chip '+appCls(a.application.status)},'App: '+appLabel(a.application.status)):null,
+        f.length?h('span',{class:'chip bad'},'Missing: '+f.join(', ')):null),
+      h('div',{class:'facts'},factsLine(a).map(b=>h('span',null,b))),
+      h('div',{class:'musts'},MUSTS.map(([k,l])=>{const v=(a.must||{})[k];return h('span',{class:'must '+(v===true?'y':v===false?'n':''),title:v==null?'Unconfirmed':''},(v===true?'✓ ':v===false?'✗ ':'? ')+l)})),
+      h('div',{class:'bar'},h('i',{style:`width:${clamp(s,0,100)}%`}))),
+    h('div',{class:'score'},h('b',null,s),h('small',null,'/ 100')));
+  const art=h('article',{class:'apt'+(f.length?' fail':'')},head);
+  if(open)art.append(detail(a));
+  return art;
+}
+function detail(a){
+  const guessed=new Set(a.guessed||[]);
+  if(commuteUnknown(a))guessed.add('commute');else guessed.delete('commute');
+  FACTORS.forEach(f=>{if(f.custom&&typeof a.scores?.[f.k]!=='number')guessed.add(f.k)});
+  const rows=FACTORS.map(fc=>{const v=fscore(a,fc.k);const w=state.weights[fc.k]||0;
+    return h('tr',{class:guessed.has(fc.k)?'guess':''},h('td',null,fc.label),h('td',{class:'r num'},w+'%'),
+      h('td',{class:'r num'},v+(guessed.has(fc.k)?'*':'')),h('td',null,h('span',{class:'minibar'},h('i',{style:`width:${v*10}%`}))),
+      h('td',{class:'r num'},(Math.round(w*v)/10).toString()))});
+  const ul=(arr)=>arr&&arr.length?h('ul',null,arr.map(x=>h('li',null,x))):h('div',{class:'empty'},'None noted');
+  const moveSel=h('select',{'aria-label':'Move to category',onchange:async e=>{const v=e.target.value;if(!v)return;await saveApt(a.id,{...a,status:v});}},
+    h('option',{value:''},'Move to…'),...Object.entries(STATUS).filter(([k])=>k!==a.status).map(([k,l])=>h('option',{value:k},l)));
+  const delWrap=h('span',null);
+  const delBtn=h('button',{class:'btn small danger',onclick:()=>{delWrap.replaceChildren(h('span',{class:'tabnote'},'Delete '+a.name+'? '),
+    h('button',{class:'btn small danger',onclick:()=>deleteApt(a.id)},'Yes, delete'),' ',h('button',{class:'btn small',onclick:()=>render()},'Cancel'))}},'Delete');
+  delWrap.append(delBtn);
+  const extra=[];
+  if(a.amenities&&a.amenities.length)extra.push('Amenities: '+a.amenities.join(', '));
+  if(a.parkingNote)extra.push('Parking: '+a.parkingNote);
+  if(a.petNote)extra.push('Pets: '+a.petNote);
+  if(a.safetyNote)extra.push('Area: '+a.safetyNote);
+  if(a.tourDate)extra.push('Toured '+a.tourDate);
+  if(a.gut)extra.push('Gut feeling: '+a.gut+'/10');
+  return h('div',{class:'detail'},
+    a.summary?h('p',{class:'summary',style:'margin:0'},a.summary):null,
+    extra.length?h('div',{class:'facts'},extra.map(x=>h('span',null,x))):null,
+    h('div',{class:'breakdown'},h('table',null,h('thead',null,h('tr',null,h('th',null,'Factor'),h('th',{class:'r'},'Weight'),h('th',{class:'r'},'Score'),h('th',null,''),h('th',{class:'r'},'Points'))),h('tbody',null,rows))),
+    guessed.size?h('div',{class:'tabnote'},'* Estimate or placeholder. The tour questionnaire replaces these.'):null,
+    h('div',{class:'pc'},h('div',null,h('h3',null,'Pros'),ul(a.pros)),h('div',null,h('h3',null,'Cons'),ul(a.cons))),
+    a.notes?h('p',{class:'summary',style:'margin:0'},'Notes: '+a.notes):null,
+    h('div',{class:'actions'},
+      h('button',{class:'btn small primary',onclick:()=>openQuiz(a)},a.estimated?'Tour questionnaire':'Edit tour answers'),
+      h('button',{class:'btn small',onclick:()=>openApp(a)},a.application?'Update application':'Track application'),
+      moveSel,a.link?h('a',{href:a.link,target:'_blank',rel:'noopener'},'Open listing ↗'):null,delWrap));
+}
+
+/* ---------- weights ---------- */
+function renderWeights(){
+  const g=$('wgrid');if(g.dataset.editing==='1')return;
+  g.replaceChildren(...FACTORS.map(f=>h('label',null,f.label,h('input',{type:'number',min:'0',max:'100',step:'1',id:'w-'+f.k,value:state.weights[f.k]??0,oninput:wTotal,onfocus:()=>g.dataset.editing='1'}))));
+  wTotal();
+}
+function readW(){const w={};FACTORS.forEach(f=>w[f.k]=Math.max(0,parseFloat($('w-'+f.k).value)||0));return w}
+function wTotal(){const t=Object.values(readW()).reduce((a,b)=>a+b,0);$('wtotal').textContent=t;$('wsave').disabled=t!==100;$('wmsg').textContent=t!==100?'Weights must add up to 100.':''}
+$('wsave').onclick=async()=>{const w=readW();$('wgrid').dataset.editing='0';await saveWeights(w);$('wmsg').textContent='Saved. Rankings updated.'};
+$('wreset').onclick=async()=>{$('wgrid').dataset.editing='0';await saveWeights(DEFAULT_W);$('wmsg').textContent='Reset to default.'};
+
+/* ---------- questionnaire ---------- */
+const Q={
+  light:{l:'Natural light & ceiling height',o:[['great','Great',9],['good','Good',7],['meh','Meh',4],['poor','Poor',2]]},
+  safety:{l:'How did the surrounding blocks feel?',o:[['safe','Safe day & night',10],['day','Fine by day, unsure at night',7],['some','Some concerns',4],['unsafe','Felt unsafe',2]]},
+  living:{l:'Main living room & kitchen size',o:[['spacious','Spacious',9],['comfortable','Comfortable',7],['tight','Tight',4],['toosmall','Too small',2]]},
+  bedrooms:{l:'Bedrooms overall',o:[['allgood','All good size',9],['twogood','2 good, 1 weak',6],['small','Mostly small',4],['poor','Poor',2]]},
+  baths:{l:'Bathrooms',o:[['1','1',2],['1.5','1.5',4],['2','2',7],['2.5','2.5',9],['3','3+',10]]},
+  condition:{l:'Condition & finishes',o:[['excellent','Excellent',10],['good','Good',8],['worn','Worn',5],['rough','Rough',2]]},
+  amenities:{l:'Amenities',o:[['great','Great',10],['good','Good',8],['basic','Basic',5],['none','Few / none',2]]},
+  parking:{l:'Parking',o:[['incl','In building, included',10],['paid','In building, paid',8],['offsite','Off-site / across street',5],['street','Street only',3],['none','None',1]]},
+  pets:{l:'Pets',o:[['nofee','Dogs OK, no fees',10],['esa','Free with ESA letter',9],['low','Dogs OK, low fees',8],['high','Dogs OK, high fees',5],['no','Not allowed',1]]},
+  beds3:{l:'Real 3 bedrooms (each with a window)?',o:[['yes','Yes',1],['no','No',0]]},
+  laundry:{l:'In-unit washer/dryer?',o:[['yes','Yes',1],['no','No',0]]},
+};
+const ISSUES=[['noclosets','Bedrooms without closets'],['windowless','Room without a window'],['translucent','See-through / no-privacy doors'],['small3rd','Small 3rd bedroom']];
+function radios(key,cur,q){
+  q=q||Q[key];
+  return h('div',{class:'q'},h('div',{class:'ql',id:'ql-'+key},q.l),
+    h('div',{class:'opts',role:'radiogroup','aria-labelledby':'ql-'+key},q.o.map(([v,l])=>h('label',null,h('input',{type:'radio',name:'q-'+key,id:`q-${key}-${v}`,value:v,checked:cur===v}),l))));
+}
+function openQuiz(a){
+  const t=a.tour||{};
+  const root=$('modalroot');
+  const close=()=>root.replaceChildren();
+  const err=h('div',{class:'addmsg err'});
+  const form=h('form',{class:'modal',role:'dialog','aria-modal':'true','aria-labelledby':'qtitle',onsubmit:async e=>{
+    e.preventDefault();
+    const fd=new FormData(form);const pick=k=>fd.get('q-'+k);
+    const missing=['light','safety','living','bedrooms','baths','condition','amenities','parking','pets','beds3','laundry'].filter(k=>!pick(k));
+    if(missing.length){err.textContent='Answer every multiple-choice question first ('+missing.map(k=>Q[k].l).join('; ')+').';return}
+    const val=k=>Q[k].o.find(o=>o[0]===pick(k))[2];
+    const issues=ISSUES.map(i=>i[0]).filter(k=>fd.get('i-'+k));
+    const rent=num(fd.get('rent'));
+    const commutes={...(a.commutes||{})};
+    state.locs.forEach(l=>{commutes[l.id]={walk:num(fd.get('walk-'+l.id)),transit:num(fd.get('transit-'+l.id))}});
+    const walk=commutes.jessie?commutes.jessie.walk:(a.walkMin??null),transit=commutes.jessie?commutes.jessie.transit:(a.transitMin??null);
+    const scores={light:val('light'),safety:val('safety'),living:val('living'),bedrooms:clamp(val('bedrooms')-issues.length,1,10),baths:val('baths'),
+      condition:val('condition'),amenities:val('amenities'),parking:val('parking'),pets:val('pets'),
+      rent:rentScore(rent),commute:5};
+    const guessed=[];if(rent==null)guessed.push('rent');
+    const custom={};
+    FACTORS.filter(f=>f.custom).forEach(f=>{const p=pick(f.k);if(p){scores[f.k]=GEN.find(g=>g[0]===p)[2];custom[f.k]=p}
+      else if(typeof a.scores?.[f.k]==='number'){scores[f.k]=a.scores[f.k];guessed.push(f.k)}});
+    const split=s=>String(s||'').split('\n').map(x=>x.trim()).filter(Boolean);
+    const tour={light:pick('light'),safety:pick('safety'),living:pick('living'),bedrooms:pick('bedrooms'),baths:pick('baths'),condition:pick('condition'),
+      amenities:pick('amenities'),parking:pick('parking'),pets:pick('pets'),beds3:pick('beds3'),laundry:pick('laundry'),issues,...custom};
+    const upd={...a,status:'toured',estimated:false,source:'tour',scores,guessed,tour,rent,walkMin:walk,transitMin:transit,commutes,
+      baths:parseFloat(pick('baths')),tourDate:fd.get('date')||null,gut:num(fd.get('gut')),
+      pros:split(fd.get('pros')),cons:split(fd.get('cons')),notes:String(fd.get('notes')||'').trim(),
+      must:{beds:pick('beds3')==='yes',baths:parseFloat(pick('baths'))>=2,pets:pick('pets')!=='no',parking:pick('parking')!=='none'&&pick('parking')!=='street',laundry:pick('laundry')==='yes'}};
+    upd.scores.commute=commuteAvg(upd);
+    delete upd.id;
+    await saveApt(a.id,upd);state.open[a.id]=true;close();setTab('toured');
+  }},
+    h('h2',{id:'qtitle'},'Tour questionnaire: '+a.name),
+    h('div',{class:'tabnote'},'Your answers replace the estimates and move this apartment into Toured.'),
+    h('div',{class:'section-lbl'},'The unit'),
+    radios('light',t.light),radios('living',t.living),radios('bedrooms',t.bedrooms),
+    h('div',{class:'q'},h('div',{class:'ql'},'Any bedroom problems?'),h('div',{class:'hint'},'Each one takes a point off the bedroom score.'),
+      h('div',{class:'opts'},ISSUES.map(([k,l])=>h('label',null,h('input',{type:'checkbox',name:'i-'+k,id:'i-'+k,checked:(t.issues||[]).includes(k)}),l)))),
+    radios('baths',t.baths),radios('beds3',t.beds3),radios('laundry',t.laundry),radios('condition',t.condition),
+    h('div',{class:'section-lbl'},'The building'),
+    radios('safety',t.safety),radios('amenities',t.amenities),radios('parking',t.parking),radios('pets',t.pets),
+    ...(FACTORS.some(f=>f.custom)?[h('div',{class:'section-lbl'},'Your added factors'),
+      ...FACTORS.filter(f=>f.custom).map(f=>radios(f.k,t[f.k],{l:f.label+(f.desc?' ('+f.desc+')':''),o:GEN}))]:[]),
+    h('div',{class:'section-lbl'},'Money & commute'),
+    h('div',{class:'q'},h('label',{class:'ql',for:'f-rent'},'12-month rent ($)'),h('input',{type:'number',id:'f-rent',name:'rent',min:'0',step:'25',inputmode:'numeric',value:a.rent??''}),
+      h('div',{class:'hint'},'Leave blank if you don’t know it yet. It stays a placeholder.')),
+    h('div',{class:'q'},h('div',{class:'ql'},'Commute to each work location (minutes)'),h('div',{class:'hint'},'Leave blank if unknown. Passes at under 25 min walking or under 30 min on transit.')),
+    ...state.locs.map(l=>{const c=getC(a,l)||{};return h('div',{class:'three'},
+      h('div',{class:'ql',style:'align-self:end;padding-bottom:8px'},l.name),
+      h('div',{class:'q'},h('label',{class:'hint',for:'f-walk-'+l.id},'Walk'),h('input',{type:'number',id:'f-walk-'+l.id,name:'walk-'+l.id,min:'0',value:c.walk??''})),
+      h('div',{class:'q'},h('label',{class:'hint',for:'f-transit-'+l.id},'Transit'),h('input',{type:'number',id:'f-transit-'+l.id,name:'transit-'+l.id,min:'0',value:c.transit??''})))}),
+    h('div',{class:'section-lbl'},'Your take'),
+    h('div',{class:'two'},
+      h('div',{class:'q'},h('label',{class:'ql',for:'f-pros'},'Pros (one per line)'),h('textarea',{id:'f-pros',name:'pros'},(a.pros||[]).join('\n'))),
+      h('div',{class:'q'},h('label',{class:'ql',for:'f-cons'},'Cons (one per line)'),h('textarea',{id:'f-cons',name:'cons'},(a.cons||[]).join('\n')))),
+    h('div',{class:'two'},
+      h('div',{class:'q'},h('label',{class:'ql',for:'f-date'},'Tour date'),h('input',{type:'date',id:'f-date',name:'date',value:a.tourDate||''})),
+      h('div',{class:'q'},h('label',{class:'ql',for:'f-gut'},'Gut feeling (1–10, not scored)'),h('input',{type:'number',id:'f-gut',name:'gut',min:'1',max:'10',value:a.gut??''}))),
+    h('div',{class:'q'},h('label',{class:'ql',for:'f-notes'},'Notes'),h('textarea',{id:'f-notes',name:'notes'},a.notes||'')),
+    err,
+    h('div',{class:'mfoot'},h('button',{type:'button',class:'btn',onclick:close},'Cancel'),h('button',{type:'submit',class:'btn primary'},'Save & rank')));
+  const ov=h('div',{class:'overlay',onclick:e=>{if(e.target===ov)close()}},form);
+  ov.addEventListener('keydown',e=>{if(e.key==='Escape')close()});
+  root.replaceChildren(ov);form.querySelector('input')?.focus();
+}
+
+/* ---------- applications ---------- */
+const APP=[['lease','Lease signed','good'],['approved','Approved','good'],['review','Under review','warn'],['submitted','Submitted','warn'],
+  ['preparing','Preparing',''],['denied','Denied','bad'],['withdrawn','Withdrawn','']];
+const appLabel=s=>(APP.find(x=>x[0]===s)||[,s])[1];
+const appCls=s=>(APP.find(x=>x[0]===s)||[,,''])[2];
+const appOrder=s=>{const i=APP.findIndex(x=>x[0]===s);return i<0?99:i};
+function fmtDate(d){if(!d)return null;const t=new Date(d+'T12:00:00');return isNaN(t)?d:t.toLocaleDateString('en-US',{month:'short',day:'numeric'})}
+function renderApps(all){
+  const items=all.filter(a=>a.application).sort((x,y)=>appOrder(x.application.status)-appOrder(y.application.status)||total(y)-total(x));
+  const active=items.filter(a=>!['denied','withdrawn'].includes(a.application.status)).length;
+  $('tabnote').textContent=items.length?`${items.length} application${items.length>1?'s':''}, ${active} still active. Sorted by how far along each one is.`:'';
+  const list=$('list');list.replaceChildren();
+  if(!items.length){list.append(h('div',{class:'empty-state'},'No applications yet. Open an apartment and click “Track application”.'));return}
+  for(const a of items){
+    const ap=a.application;
+    const facts=[ap.appliedDate?'Applied '+fmtDate(ap.appliedDate):'Not submitted yet',ap.unit?'Unit '+ap.unit:null,
+      ap.fee!=null?'Fee '+money(ap.fee):null,ap.nextDate?'Next: '+(ap.nextStep||'follow up')+' by '+fmtDate(ap.nextDate):ap.nextStep?'Next: '+ap.nextStep:null,
+      ap.contact?'Contact: '+ap.contact:null,'Score '+total(a)].filter(Boolean);
+    const sel=h('select',{'aria-label':'Application status for '+a.name,onchange:async e=>{await saveApt(a.id,{...a,application:{...ap,status:e.target.value,updatedAt:new Date().toISOString()}})}},
+      APP.map(([v,l])=>h('option',{value:v,selected:v===ap.status},l)));
+    list.append(h('article',{class:'apt'},h('div',{class:'detail',style:'border-top:0'},
+      h('div',{class:'line1'},h('span',{class:'plate'},a.name),h('span',{class:'chip '+appCls(ap.status)},appLabel(ap.status)),
+        ap.nextDate&&new Date(ap.nextDate+'T23:59:59')<new Date()&&!['lease','denied','withdrawn'].includes(ap.status)?h('span',{class:'chip bad'},'Follow-up overdue'):null),
+      h('div',{class:'facts'},facts.map(f=>h('span',null,f))),
+      ap.notes?h('p',{class:'summary',style:'margin:0'},ap.notes):null,
+      h('div',{class:'actions'},sel,h('button',{class:'btn small',onclick:()=>openApp(a)},'Edit details'),
+        ap.updatedAt?h('span',{class:'tabnote'},'Updated '+new Date(ap.updatedAt).toLocaleDateString('en-US',{month:'short',day:'numeric'})):null))));
+  }
+}
+function openApp(a){
+  const ap=a.application||{status:'preparing'};
+  const err=h('div',{class:'addmsg err'});
+  const txt=(id,label,val,type)=>h('div',{class:'q'},h('label',{class:'ql',for:id},label),h('input',{type:type||'text',id,name:id,value:val??''}));
+  const form=h('form',{class:'modal',role:'dialog','aria-modal':'true','aria-labelledby':'atitle',onsubmit:async e=>{
+    e.preventDefault();const fd=new FormData(form);
+    const s=fd.get('a-status');if(!s){err.textContent='Pick a status.';return}
+    const app={status:s,unit:String(fd.get('a-unit')||'').trim()||null,appliedDate:fd.get('a-date')||null,fee:num(fd.get('a-fee')),
+      nextStep:String(fd.get('a-next')||'').trim()||null,nextDate:fd.get('a-nextdate')||null,contact:String(fd.get('a-contact')||'').trim()||null,
+      notes:String(fd.get('a-notes')||'').trim(),updatedAt:new Date().toISOString()};
+    const upd={...a,application:app};delete upd.id;await saveApt(a.id,upd);close();
+  }},
+    h('h2',{id:'atitle'},'Application: '+a.name),
+    h('div',{class:'q'},h('div',{class:'ql',id:'al-status'},'Status'),h('div',{class:'opts',role:'radiogroup','aria-labelledby':'al-status'},
+      APP.map(([v,l])=>h('label',null,h('input',{type:'radio',name:'a-status',id:'a-status-'+v,value:v,checked:ap.status===v}),l)))),
+    h('div',{class:'two'},txt('a-unit','Unit #',ap.unit),txt('a-date','Date applied',ap.appliedDate,'date')),
+    h('div',{class:'two'},txt('a-fee','Application fee ($)',ap.fee,'number'),txt('a-contact','Leasing contact',ap.contact)),
+    h('div',{class:'two'},txt('a-next','Next step',ap.nextStep),txt('a-nextdate','Next step due',ap.nextDate,'date')),
+    h('div',{class:'q'},h('label',{class:'ql',for:'a-notes'},'Notes'),h('textarea',{id:'a-notes',name:'a-notes',placeholder:'Documents sent, who co-signed, holding deposit, move-in date…'},ap.notes||'')),
+    err,
+    h('div',{class:'mfoot'},
+      a.application?h('button',{type:'button',class:'btn danger',onclick:async()=>{const upd={...a};delete upd.application;delete upd.id;await saveApt(a.id,upd);close()}},'Stop tracking'):null,
+      h('button',{type:'button',class:'btn',onclick:()=>close()},'Cancel'),h('button',{type:'submit',class:'btn primary'},'Save application')));
+  const close=showModal(form);
+}
+
+/* ---------- modal shell ---------- */
+function showModal(form){
+  const root=$('modalroot');const close=()=>root.replaceChildren();
+  const ov=h('div',{class:'overlay',onclick:e=>{if(e.target===ov)close()}},form);
+  ov.addEventListener('keydown',e=>{if(e.key==='Escape')close()});
+  root.replaceChildren(ov);form.querySelector('input')?.focus();
+  return close;
+}
+
+/* ---------- work locations ---------- */
+function openLocs(){
+  let rows=state.locs.map(l=>({...l}));
+  const list=h('div',{style:'display:flex;flex-direction:column;gap:8px'});
+  const msg=h('div',{class:'addmsg'});
+  const fillBtn=h('button',{type:'button',class:'btn',hidden:!sample},'Estimate missing commute times');
+  const drawRows=()=>{list.replaceChildren(...rows.map((r,i)=>h('div',{class:'locrow'},
+    h('input',{type:'text',id:'loc-name-'+i,'aria-label':'Who works here',placeholder:'Name (e.g. Ryan)',value:r.name,oninput:e=>r.name=e.target.value}),
+    h('input',{type:'text',class:'addr',id:'loc-addr-'+i,'aria-label':'Work address',placeholder:'Work address',value:r.address,oninput:e=>r.address=e.target.value}),
+    h('button',{type:'button',class:'btn small danger',disabled:rows.length<2,onclick:()=>{rows.splice(i,1);drawRows()}},'Remove'))))};
+  drawRows();
+  const form=h('form',{class:'modal',role:'dialog','aria-modal':'true','aria-labelledby':'ltitle',onsubmit:async e=>{
+    e.preventDefault();
+    const clean=rows.map(r=>({id:r.id||newId(r.name),name:r.name.trim(),address:r.address.trim()})).filter(r=>r.name&&r.address);
+    if(!clean.length){msg.className='addmsg err';msg.textContent='Add at least one work location with a name and address.';return}
+    rows=clean;await saveLocs(clean);drawRows();
+    const missing=Object.values(state.apts).filter(commuteUnknown).length;
+    msg.className='addmsg';msg.textContent='Saved. '+(missing?`${missing} apartment${missing>1?'s are':' is'} missing commute times.`:'Every apartment has commute times.');
+  }},
+    h('h2',{id:'ltitle'},'Work locations'),
+    h('div',{class:'tabnote'},'Add where each roommate works. Commute scores average everyone’s trip, and an apartment fails the commute check if anyone’s trip is over 25 min walking and 30 min on transit.'),
+    list,
+    h('div',null,h('button',{type:'button',class:'btn small',onclick:()=>{rows.push({id:null,name:'',address:''});drawRows();list.querySelector('.locrow:last-child input')?.focus()}},'+ Add location')),
+    msg,
+    h('div',{class:'mfoot'},fillBtn,h('button',{type:'button',class:'btn',onclick:()=>close()},'Close'),h('button',{type:'submit',class:'btn primary'},'Save locations')));
+  fillBtn.onclick=()=>fillCommutes(msg,fillBtn);
+  const close=showModal(form);
+}
+async function fillCommutes(msg,btn){
+  const need=Object.values(state.apts).filter(commuteUnknown);
+  if(!need.length){msg.className='addmsg';msg.textContent='Every apartment already has commute times.';return}
+  const pairs=[];need.forEach(a=>state.locs.forEach(l=>{if(!known(getC(a,l)))pairs.push({apt:a.id,name:a.name,address:a.address||'unknown',loc:l.id,to:l.address})}));
+  btn.disabled=true;msg.className='addmsg';msg.textContent='Estimating commute times… this can take up to a minute.';
+  try{
+    const r=await sample.json(`Estimate weekday-morning commute times in Los Angeles for each pair below. Use typical walking speed and Metro rail/bus door-to-door times. Use null for transit if there is no reasonable route.
+Pairs (apartment -> work):
+${pairs.map(p=>`- apt "${p.apt}" (${p.name}, ${p.address}) -> loc "${p.loc}" (${p.to})`).join('\n')}
+Reply with only JSON: {"<apt id>":{"<loc id>":{"walkMin":number or null,"transitMin":number or null}}}`,{modelTier:'default'});
+    let n=0;
+    for(const a of need){
+      const got=r&&r[a.id];if(!got)continue;
+      const commutes={...(a.commutes||{})};
+      state.locs.forEach(l=>{const c=getC(a,l);if(known(c))commutes[l.id]=c;else if(got[l.id])commutes[l.id]={walk:num(got[l.id].walkMin),transit:num(got[l.id].transitMin)}});
+      const upd={...a,commutes};upd.scores={...a.scores,commute:commuteAvg(upd)};delete upd.id;
+      await saveApt(a.id,upd);n++;
+    }
+    msg.textContent=`Filled commute estimates for ${n} apartment${n===1?'':'s'}. Correct them in each tour questionnaire.`;
+  }catch(e){msg.className='addmsg err';msg.textContent=e&&e.code==='not_granted'?'Estimating needs permission to use Claude. Reload and allow it.':'Couldn’t estimate commute times. Try again.'}
+  finally{btn.disabled=false}
+}
+
+/* ---------- priorities questionnaire ---------- */
+const PRIO=[['top','Top priority',5],['very','Very important',4],['some','Somewhat',2],['nice','Nice to have',1],['none','Don’t care',0]];
+const FDESC={bedrooms:'Size, closets, windows, private doors',light:'Natural light, windows, ceiling height',rent:'Paying less, staying well under $4,500',
+  safety:'How the surrounding blocks feel day and night',living:'Room to hang out together',baths:'Enough bathrooms, decent sinks',
+  amenities:'Gym, pool, workspaces, food nearby',condition:'Clean, well kept, nice finishes',commute:'Short trip to everyone’s work',
+  parking:'Easy parking in the building',pets:'Dog friendly, low pet fees'};
+const levelFor=w=>w>=18?'top':w>=10?'very':w>=6?'some':w>=1?'nice':'none';
+function toWeights(levels,fs){
+  const pts=fs.map(f=>PRIO.find(p=>p[0]===levels[f.k])[2]);const sum=pts.reduce((a,b)=>a+b,0);if(!sum)return null;
+  const raw=pts.map(p=>p*100/sum);const fl=raw.map(Math.floor);let rem=100-fl.reduce((a,b)=>a+b,0);
+  raw.map((v,i)=>[v-fl[i],i]).sort((a,b)=>b[0]-a[0]).forEach(([,i])=>{if(rem>0){fl[i]++;rem--}});
+  const w={};fs.forEach((f,i)=>w[f.k]=fl[i]);return w;
+}
+function openPriorities(){
+  let custom=state.custom.map(c=>({...c}));
+  const fs=()=>[...BASE_FACTORS,...custom.map(c=>({k:c.k,label:c.label,desc:c.desc||'',custom:true}))];
+  const levels={};fs().forEach(f=>levels[f.k]=levelFor(state.weights[f.k]||0));
+  const rowsEl=h('div');
+  const preview=h('div',{class:'preview','aria-live':'polite'});
+  const drawPreview=()=>{
+    const list=fs();const w=toWeights(levels,list);
+    if(!w){preview.replaceChildren('Pick at least one factor you care about.');return}
+    const toured=Object.values(state.apts).filter(a=>a.status==='toured').map(a=>({a,s:total(a,w,list),f:failures(a)})).sort((x,y)=>(x.f.length>0)-(y.f.length>0)||y.s-x.s);
+    preview.replaceChildren(h('b',null,'New weights'),
+      h('div',{class:'wl'},list.map(f=>h('span',null,f.label+' ',h('b',{class:'num'},w[f.k]+'%')))),
+      toured.length?h('div',null,h('b',null,'Toured ranking with these weights: '),toured.slice(0,3).map((t,i)=>`${i+1}. ${t.a.name} (${t.s})`).join(' · ')):null);
+  };
+  const drawRows=()=>{
+    rowsEl.replaceChildren(...fs().map(f=>h('div',{class:'prow'},
+      h('div',{class:'line1'},h('span',{class:'ql',id:'pl-'+f.k},f.label),f.custom?h('span',{class:'chip'},'Added'):null,
+        f.custom?h('button',{type:'button',class:'btn small danger',style:'margin-left:auto',onclick:()=>{custom=custom.filter(c=>c.k!==f.k);delete levels[f.k];drawRows();drawPreview()}},'Remove'):null),
+      h('div',{class:'hint tabnote'},FDESC[f.k]||f.desc||''),
+      h('div',{class:'opts',role:'radiogroup','aria-labelledby':'pl-'+f.k},PRIO.map(([v,l])=>h('label',null,h('input',{type:'radio',name:'p-'+f.k,id:`p-${f.k}-${v}`,value:v,checked:levels[f.k]===v}),l))))));
+  };
+  const nName=h('input',{type:'text',id:'nf-name',placeholder:'Factor name (e.g. Balcony, Noise, Storage)'});
+  const nDesc=h('input',{type:'text',id:'nf-desc',class:'addr',placeholder:'What it means (optional)'});
+  const nMsg=h('div',{class:'addmsg'});
+  const addFactor=()=>{
+    const label=nName.value.trim();if(!label){nMsg.className='addmsg err';nMsg.textContent='Give the new factor a name.';nName.focus();return}
+    if(fs().some(f=>f.label.toLowerCase()===label.toLowerCase())){nMsg.className='addmsg err';nMsg.textContent='That factor already exists.';return}
+    const k='x_'+(label.toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_|_$/g,'').slice(0,24)||'factor')+'_'+Math.random().toString(36).slice(2,5);
+    custom.push({k,label:label.slice(0,40),desc:nDesc.value.trim().slice(0,120)});levels[k]='very';
+    nName.value='';nDesc.value='';nMsg.className='addmsg';nMsg.textContent=`Added “${label}”. Set how much it matters above.`;
+    drawRows();drawPreview();
+  };
+  nName.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();addFactor()}});
+  nDesc.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();addFactor()}});
+  const form=h('form',{class:'modal',role:'dialog','aria-modal':'true','aria-labelledby':'ptitle',
+    onchange:e=>{const m=/^p-(.+)$/.exec(e.target.name||'');if(m){levels[m[1]]=e.target.value;drawPreview()}},
+    onsubmit:async e=>{e.preventDefault();const list=fs();const w=toWeights(levels,list);if(!w)return;$('wgrid').dataset.editing='0';
+      const changed=JSON.stringify(custom)!==JSON.stringify(state.custom);
+      if(changed)await saveCustom(custom);await saveWeights(w);close()}},
+    h('h2',{id:'ptitle'},'What matters most?'),
+    h('div',{class:'tabnote'},'Rate each factor. The weights are recalculated to add up to 100%, and every list re-ranks when you apply them.'),
+    rowsEl,
+    h('div',{class:'q'},h('div',{class:'section-lbl'},'Add a factor we missed'),
+      h('div',{class:'locrow'},nName,nDesc,h('button',{type:'button',class:'btn small',onclick:addFactor},'+ Add')),
+      h('div',{class:'hint tabnote'},'Added factors start at 5/10 for every apartment. Claude estimates them for new research, and the tour questionnaire asks about them.'),nMsg),
+    preview,
+    h('div',{class:'mfoot'},h('button',{type:'button',class:'btn',onclick:()=>close()},'Cancel'),h('button',{type:'submit',class:'btn primary'},'Apply weights')));
+  drawRows();drawPreview();
+  const close=showModal(form);
+}
+
+$('locbtn').onclick=openLocs;
+$('priobtn').onclick=openPriorities;
+$('addbtn').onclick=onAdd;
+$('q').addEventListener('keydown',e=>{if(e.key==='Enter')onAdd()});
+$('stopbtn').onclick=()=>ctl?.abort();
+render();boot();
+})();
+</script>
+</body>
+</html>
