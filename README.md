@@ -33,3 +33,11 @@ The site is a Cloudflare Worker (`src/worker.js`) that serves the page from `pub
 
 - https://dtla-apartment-hunt.jessiefjuarez.workers.dev/
 - https://claude.ai/artifact/TfK88uFnQ3LE3CZAqSLrcz (Claude artifact version)
+
+## iPhone
+
+On an iPhone, open the site in Safari, tap **Share → Add to Home Screen**. It opens full screen like an app, with the tabs in a bottom bar.
+
+## Editing the page
+
+Edit `artifact.html`, then run `node scripts/build.mjs` to regenerate `public/index.html` (and `node scripts/icons.mjs` if the icon changes). Commit and push to deploy.
