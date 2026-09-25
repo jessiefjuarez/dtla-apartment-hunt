@@ -73,6 +73,7 @@ h1{font-size:clamp(26px,5vw,36px);font-weight:800;letter-spacing:-.01em;line-hei
 .add{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px;display:flex;flex-direction:column;gap:10px;box-shadow:var(--shadow)}
 .add label.lbl{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:600}
 .add .row{display:flex;flex-wrap:wrap;gap:8px}
+#qaddrrow{flex-direction:column;gap:6px}
 .add input[type=text]{flex:1 1 260px;min-width:0;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--surface-2)}
 .add select{padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--surface-2)}
 .btn{padding:10px 14px;border-radius:8px;border:1px solid var(--line);background:var(--surface-2);font-weight:600}
@@ -115,6 +116,12 @@ h1{font-size:clamp(26px,5vw,36px);font-weight:800;letter-spacing:-.01em;line-hei
 .cm{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:12.5px;white-space:nowrap}
 .cm.none{color:var(--muted)}
 .cml{font-family:var(--display);color:var(--muted);font-size:12px}
+.addrstat{font-size:12.5px;color:var(--muted);line-height:1.4}
+.addrstat:empty{display:none}
+.addrstat.ok{color:var(--good)}.addrstat.warn{color:var(--warn)}.addrstat.bad{color:var(--bad)}
+.addrstat b{font-weight:600;color:var(--ink)}
+.addrstat a{color:var(--bar);font-weight:600;white-space:nowrap}
+.locrow .addrstat{grid-column:1 / -1}
 .four{display:grid;grid-template-columns:auto 1fr 1fr 1fr;gap:10px;align-items:end}
 .must{font-size:12px;border:1px solid var(--line);border-radius:4px;padding:1px 6px;color:var(--muted)}
 .must.y{border-color:transparent;background:var(--good-bg);color:var(--good)}
@@ -244,6 +251,7 @@ body.modal-open{overflow:hidden}
       <button class="btn primary" id="addbtn">Research &amp; rank</button>
       <button class="btn" id="stopbtn" hidden>Stop</button>
     </div>
+    <div class="row" id="qaddrrow"><input type="text" id="qaddr" placeholder="Address or Google Maps link (optional)" autocomplete="street-address" aria-label="Apartment address"></div>
     <div class="addmsg" id="addmsg">Claude looks up the building, estimates each factor, and places it in the ranking. Fill out the tour questionnaire after you visit to replace the estimates.</div>
   </section>
 
@@ -391,33 +399,80 @@ function lockForm(){
   return f;
 }
 /* Drive times from the map (online workspace only): fills any apartment x work location without one. */
-const driveBusy=new Set(),driveTried=new Set();let driveRunning=false;
+const driveBusy=new Set(),driveTried=new Set(),driveErr={};let driveRunning=false;
+// Where a place is, for routing: its map pin when we have one, otherwise its address text.
+const where=x=>x.lat!=null&&x.lon!=null?x.lat+','+x.lon:(x.address||'');
+// A map drive time is stale when either end has moved since it was calculated.
+const driveStale=(c,pair)=>!!c&&c.driveSrc==='map'&&!!c.driveFor&&c.driveFor!==pair;
 function nextDriveJob(){
   for(const a of Object.values(state.apts)){
-    if(!a.address)continue;
+    if(!where(a))continue;
     for(const l of state.locs){
-      if(!l.address)continue;
-      const c=getC(a,l);if(c&&c.drive!=null)continue;
-      const tag=a.id+'|'+l.id+'|'+a.address+'|'+l.address;
-      if(!driveTried.has(tag))return{a,l,tag,key:a.id+'|'+l.id};
+      if(!where(l))continue;
+      const pair=where(a)+'|'+where(l);
+      const c=getC(a,l);if(c&&c.drive!=null&&!driveStale(c,pair))continue;
+      const tag=a.id+'|'+l.id+'|'+pair;
+      if(!driveTried.has(tag))return{a,l,tag,pair,key:a.id+'|'+l.id};
     }
   }
   return null;
+}
+/* Address check: looks a typed address (or a pasted Google Maps link) up on the map and says what it found.
+   onResult gets {lat, lon, check: 'pin'|'exact'|'approx'|'none', label} or null. Online workspace only. */
+function addrCheck(input,onResult){
+  const status=h('div',{class:'addrstat','aria-live':'polite'});
+  let timer=null,seq=0,skip=false;
+  const view=r=>h('a',{href:`https://www.google.com/maps/search/?api=1&query=${r.lat},${r.lon}`,target:'_blank',rel:'noopener'},'View on map ↗');
+  const run=async()=>{
+    const v=input.value.trim();
+    if(!v||state.mode!=='remote'){status.replaceChildren();status.className='addrstat';onResult(null);return}
+    const my=++seq;status.className='addrstat';status.textContent='Checking the map…';
+    let r;try{r=await api('GET','/api/geocode?q='+encodeURIComponent(v))}catch(e){if(my===seq)status.textContent='';return}
+    if(my!==seq)return;
+    if(r&&r.found&&/^https?:\/\//i.test(v)&&r.label){skip=true;input.value=r.label;input.dispatchEvent(new Event('input',{bubbles:true}))}
+    show(r);
+  };
+  const show=r=>{
+    if(r&&r.found){
+      const check=r.via==='pin'?'pin':r.exact?'exact':'approx';
+      status.className='addrstat '+(check==='approx'?'warn':'ok');
+      status.replaceChildren(...[
+        check==='pin'?'✓ Pinned from Google Maps: ':check==='exact'?'✓ Found on the map: ':
+          `⚠ That exact address isn’t on the map, so drive times use the ${r.via==='zip'?'ZIP code':'city'} area: `,
+        h('b',null,r.label),' ',view(r),
+        check==='approx'?h('div',null,'For an exact spot, paste the place’s Google Maps link here.'):null].filter(Boolean));
+      onResult({lat:r.lat,lon:r.lon,check,label:r.label});
+    }else{
+      status.className='addrstat bad';
+      status.textContent='✗ '+(r&&r.error?r.error:'Couldn’t find this on the map. Check the spelling, or paste the place’s Google Maps link.');
+      onResult({lat:null,lon:null,check:'none',label:null});
+    }
+  };
+  input.addEventListener('input',()=>{if(skip){skip=false;return}clearTimeout(timer);timer=setTimeout(run,800)});
+  input.addEventListener('change',()=>{clearTimeout(timer);run()});
+  // Show what's already saved without looking it up again (a saved Google Maps pin must not be replaced by a lookup of its label).
+  const init=x=>{
+    if(state.mode!=='remote'||!x||!x.address)return;
+    if(x.check==='pin'&&x.lat!=null){status.className='addrstat ok';status.replaceChildren('✓ Pinned from Google Maps ',view(x));}
+    else run();
+  };
+  return{status,run,init};
 }
 async function autoDrive(){
   if(state.mode!=='remote'||driveRunning)return;
   driveRunning=true;
   try{
     for(let job=nextDriveJob();job;job=nextDriveJob()){
-      const{a,l,tag,key}=job;driveTried.add(tag);driveBusy.add(key);render();
-      let minutes=null,miles=null;
-      try{const r=await api('GET','/api/drive?from='+encodeURIComponent(a.address)+'&to='+encodeURIComponent(l.address));
-        minutes=r&&typeof r.minutes==='number'?r.minutes:null;miles=r&&typeof r.miles==='number'?r.miles:null}catch(e){}
+      const{a,l,tag,pair,key}=job;driveTried.add(tag);driveBusy.add(key);render();
+      let minutes=null,miles=null,approx=false;
+      try{const r=await api('GET','/api/drive?from='+encodeURIComponent(where(a))+'&to='+encodeURIComponent(where(l)));
+        minutes=r&&typeof r.minutes==='number'?r.minutes:null;miles=r&&typeof r.miles==='number'?r.miles:null;approx=!!(r&&r.approx);
+        if(minutes==null&&r&&r.error)driveErr[key]=r.error;}catch(e){}
       driveBusy.delete(key);
       const cur=state.apts[a.id];
       const base=cur&&getC(cur,l)||{};
-      if(cur&&minutes!=null&&base.drive==null){
-        const upd={...cur,commutes:{...(cur.commutes||{}),[l.id]:{...base,drive:minutes,driveSrc:'map',miles}}};delete upd.id;
+      if(cur&&minutes!=null&&(base.drive==null||driveStale(base,pair))&&where(cur)+'|'+where(l)===pair){
+        const upd={...cur,commutes:{...(cur.commutes||{}),[l.id]:{...base,drive:minutes,driveSrc:'map',miles,approx,driveFor:pair}}};delete upd.id;
         await saveApt(a.id,upd);
       }else render();
     }
@@ -509,9 +564,14 @@ async function onAdd(){
   const q=$('q').value.trim();if(!q){$('q').focus();return}
   const status=$('qstatus').value;const isUrl=/^https?:\/\//i.test(q);
   const msg=$('addmsg');msg.classList.remove('err');
+  const typedAddr=$('qaddr').value.trim();
+  const place=typedAddr?{address:typedAddr,lat:addPlace.lat,lon:addPlace.lon,check:addPlace.check}:null;
+  const clearAddr=()=>{$('qaddr').value='';addPlace={};addChk.status.replaceChildren()};
   if(!sample){
     const base=blankApt(isUrl?'New apartment':q,status);if(isUrl)base.link=q;
-    await saveApt(newId(base.name),base);$('q').value='';msg.textContent='Added. Open it and fill out the questionnaire to score it.';
+    if(place)Object.assign(base,place);
+    await saveApt(newId(base.name),base);$('q').value='';clearAddr();
+    msg.textContent='Added. Open it and fill out the questionnaire to score it.'+(place?'':' Add its address in the questionnaire to get commute times.');
     setTab(status);return;
   }
   ctl=new AbortController();$('addbtn').disabled=true;$('stopbtn').hidden=false;
@@ -532,8 +592,9 @@ async function onAdd(){
       notes:'',scores,guessed:FACTORS.map(f=>f.k),estimated:true,confidence:r.confidence||'low',source:'research',
       must:{beds:bool(r.beds3Available),baths:baths==null?null:baths>=2,pets:bool(r.petsAllowed),parking:bool(r.parkingAvailable),laundry:bool(r.washerDryer)},
       commutes,createdAt:new Date().toISOString()};
+    if(place)Object.assign(apt,place);
     apt.scores.commute=commuteAvg(apt);
-    const id=newId(apt.name);await saveApt(id,apt);state.open[id]=true;
+    const id=newId(apt.name);await saveApt(id,apt);state.open[id]=true;clearAddr();
     $('q').value='';msg.textContent=`Added ${apt.name} (${r.confidence||'low'} confidence). Scores are estimates until you tour.`;
     setTab(status);
   }catch(e){
@@ -601,7 +662,8 @@ function commuteRows(a){
     const pending=drive==null&&driveBusy.has(a.id+'|'+l.id);
     return h('div',{class:'crow'},h('b',null,l.name),m(c.walk??null,'Walk'),m(c.transit??null,'Transit'),
       pending?h('span',{class:'cm none'},h('span',{class:'cml'},'Drive '),'finding…'):
-        h('span',{class:'cm'+(drive==null?' none':''),title:c.driveSrc==='map'?'Map estimate padded for weekday traffic'+(c.miles!=null?' · '+c.miles+' mi':''):''},h('span',{class:'cml'},'Drive '),drive==null?'—':drive+' min'+(c.driveSrc==='map'?'*':'')));
+        h('span',{class:'cm'+(drive==null?' none':''),title:drive==null?(driveErr[a.id+'|'+l.id]||''):c.driveSrc==='map'?(c.approx?'Approximate: one address wasn’t found, so this uses its ZIP code or city. ':'')+'Map estimate padded for weekday traffic'+(c.miles!=null?' · '+c.miles+' mi':''):''},
+          h('span',{class:'cml'},'Drive '),drive==null?(driveErr[a.id+'|'+l.id]?'address not found':'—'):(c.approx?'~':'')+drive+' min'+(c.driveSrc==='map'?'*':'')));
   }));
 }
 function card(a,s,f,rank){
@@ -709,6 +771,11 @@ function openQuiz(a){
   const root=$('modalroot');
   let close=()=>{root.replaceChildren();document.body.classList.remove('modal-open')};
   const err=h('div',{class:'addmsg err'});
+  let qPlace={lat:a.lat??null,lon:a.lon??null,check:a.check||null};
+  const addrIn=h('input',{type:'text',id:'f-addr',name:'addr',value:a.address||'',placeholder:'Street address or Google Maps link',autocomplete:'street-address',
+    oninput:()=>{qPlace={lat:null,lon:null,check:null}}});
+  const qChk=addrCheck(addrIn,r=>{qPlace=r?{lat:r.lat,lon:r.lon,check:r.check}:{lat:null,lon:null,check:null}});
+  qChk.init(a);
   const form=h('form',{class:'modal',role:'dialog','aria-modal':'true','aria-labelledby':'qtitle',onsubmit:async e=>{
     e.preventDefault();
     const fd=new FormData(form);const pick=k=>fd.get('q-'+k);
@@ -743,12 +810,16 @@ function openQuiz(a){
       baths:parseFloat(pick('baths')),tourDate:fd.get('date')||null,gut:num(fd.get('gut')),
       pros:split(fd.get('pros')),cons:split(fd.get('cons')),notes:String(fd.get('notes')||'').trim(),
       must:{beds:beds>=3,baths:parseFloat(pick('baths'))>=2,pets:pick('pets')!=='no',parking:pick('parking')!=='none'&&pick('parking')!=='street',laundry:pick('laundry')==='yes'}};
+    const addr=addrIn.value.trim();
+    upd.address=addr||null;
+    if(addr!==(a.address||'')||qPlace.lat!=null)Object.assign(upd,qPlace);
     upd.scores.commute=commuteAvg(upd);
     delete upd.id;
     await saveApt(a.id,upd);state.open[a.id]=true;close();setTab('toured');
   }},
     h('h2',{id:'qtitle'},'Tour questionnaire: '+a.name),
     h('div',{class:'tabnote'},'Your answers replace the estimates and move this apartment into Toured.'),
+    h('div',{class:'q'},h('label',{class:'ql',for:'f-addr'},'Apartment address'),addrIn,qChk.status),
     h('div',{class:'section-lbl'},'The unit'),
     radios('light',t.light),radios('living',t.living),
     h('div',{class:'section-lbl'},'Bedrooms'),
@@ -857,18 +928,27 @@ function openLocs(){
   const list=h('div',{style:'display:flex;flex-direction:column;gap:8px'});
   const msg=h('div',{class:'addmsg'});
   const fillBtn=h('button',{type:'button',class:'btn',hidden:!sample},'Estimate missing commute times');
-  const drawRows=()=>{list.replaceChildren(...rows.map((r,i)=>h('div',{class:'locrow'},
-    h('input',{type:'text',id:'loc-name-'+i,'aria-label':'Who works here',placeholder:'Name (e.g. Ryan)',value:r.name,oninput:e=>r.name=e.target.value}),
-    h('input',{type:'text',class:'addr',id:'loc-addr-'+i,'aria-label':'Work address',placeholder:'Work address',value:r.address,oninput:e=>r.address=e.target.value}),
-    h('button',{type:'button',class:'btn small danger',disabled:rows.length<2,onclick:()=>{rows.splice(i,1);drawRows()}},'Remove'))))};
+  const drawRows=()=>{list.replaceChildren(...rows.map((r,i)=>{
+    const addr=h('input',{type:'text',class:'addr',id:'loc-addr-'+i,'aria-label':'Work address',placeholder:'Work address or Google Maps link',value:r.address,
+      oninput:e=>{r.address=e.target.value;r.lat=r.lon=null;r.check=null}});
+    const chk=addrCheck(addr,res=>{if(res){r.lat=res.lat;r.lon=res.lon;r.check=res.check}});
+    chk.init(r);
+    return h('div',{class:'locrow'},
+      h('input',{type:'text',id:'loc-name-'+i,'aria-label':'Who works here',placeholder:'Name (e.g. Ryan)',value:r.name,oninput:e=>r.name=e.target.value}),
+      addr,
+      h('button',{type:'button',class:'btn small danger',disabled:rows.length<2,onclick:()=>{rows.splice(i,1);drawRows()}},'Remove'),
+      chk.status);
+  }))};
   drawRows();
   const form=h('form',{class:'modal',role:'dialog','aria-modal':'true','aria-labelledby':'ltitle',onsubmit:async e=>{
     e.preventDefault();
-    const clean=rows.map(r=>({id:r.id||newId(r.name),name:r.name.trim(),address:r.address.trim()})).filter(r=>r.name&&r.address);
+    const clean=rows.map(r=>({id:r.id||newId(r.name),name:r.name.trim(),address:r.address.trim(),
+      lat:r.lat??null,lon:r.lon??null,check:r.check||null})).filter(r=>r.name&&r.address);
     if(!clean.length){msg.className='addmsg err';msg.textContent='Add at least one work location with a name and address.';return}
     rows=clean;await saveLocs(clean);drawRows();
     const missing=Object.values(state.apts).filter(commuteUnknown).length;
-    msg.className='addmsg';msg.textContent='Saved. '+(missing?`${missing} apartment${missing>1?'s are':' is'} missing commute times.`:'Every apartment has commute times.');
+    msg.className='addmsg';msg.textContent='Saved. '+(state.mode==='remote'?'Drive times for new or moved locations fill in on each apartment in a few seconds.':
+      missing?`${missing} apartment${missing>1?'s are':' is'} missing commute times.`:'Every apartment has commute times.');
   }},
     h('h2',{id:'ltitle'},'Work locations'),
     h('div',{class:'tabnote'},'Add where each roommate works. Commute scores average everyone’s trip, and an apartment fails the commute check if anyone’s trip is over 25 min walking and 30 min on transit. Every apartment shows each person’s walk, transit and drive time; on the website, drive times fill in from a map automatically.'),
@@ -969,6 +1049,10 @@ function openPriorities(){
   const close=showModal(form);
 }
 
+let addPlace={};
+const addChk=addrCheck($('qaddr'),r=>{addPlace=r||{}});
+$('qaddrrow').append(addChk.status);
+$('qaddr').addEventListener('input',()=>{addPlace={}});
 $('locbtn').onclick=openLocs;
 $('priobtn').onclick=openPriorities;
 $('addbtn').onclick=onAdd;
