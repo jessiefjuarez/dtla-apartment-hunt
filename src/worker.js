@@ -192,7 +192,7 @@ export class HuntStore extends DurableObject {
     if (out.address && out.lat == null) {
       const g = await this.geocode(/,/.test(out.address) ? out.address : out.address + ", Los Angeles, CA");
       if (g) { out.lat = g.lat; out.lon = g.lon; out.check = g.exact ? "exact" : "approx"; }
-    } else if (out.lat != null) out.check = "pin";
+    } else if (out.lat != null && !out.check) out.check = "exact";
     return out;
   }
 
