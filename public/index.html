@@ -74,6 +74,11 @@ h1{font-size:clamp(26px,5vw,36px);font-weight:800;letter-spacing:-.01em;line-hei
 .add label.lbl{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:600}
 .add .row{display:flex;flex-wrap:wrap;gap:8px}
 #qaddrrow{flex-direction:column;gap:6px}
+.importpanel{border:1px solid var(--sign);border-radius:8px;padding:12px;display:flex;flex-direction:column;gap:6px;background:var(--surface-2)}
+.irow{display:grid;grid-template-columns:110px 1fr;gap:8px;font-size:13.5px}
+.bmrow summary{cursor:pointer;font-weight:600;font-size:13.5px}
+.bmrow p{font-size:13px;color:var(--muted);margin:6px 0 8px;max-width:65ch}
+.bm{display:inline-block;text-decoration:none;background:var(--sign);color:var(--sign-ink);border-color:var(--sign);cursor:grab}
 .add input[type=text]{flex:1 1 260px;min-width:0;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--surface-2)}
 .add select{padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--surface-2)}
 .btn{padding:10px 14px;border-radius:8px;border:1px solid var(--line);background:var(--surface-2);font-weight:600}
@@ -252,6 +257,12 @@ body.modal-open{overflow:hidden}
       <button class="btn" id="stopbtn" hidden>Stop</button>
     </div>
     <div class="row" id="qaddrrow"><input type="text" id="qaddr" placeholder="Address or Google Maps link (optional)" autocomplete="street-address" aria-label="Apartment address"></div>
+    <div class="importpanel" id="importpanel" hidden></div>
+    <details class="bmrow" id="bmrow" hidden>
+      <summary>Add listings from Chrome for free</summary>
+      <p>Sites like Apartments.com and Zillow block automatic reading, but this button reads the listing you already have open. Drag it to your Chrome bookmarks bar (press Ctrl+Shift+B if the bar is hidden). Then, on any listing page, click it. A new tab opens here with the details to confirm.</p>
+      <a class="btn bm" id="bmlink" href="#">Send to Apt Hunt</a>
+    </details>
     <div class="addmsg" id="addmsg">Claude looks up the building, estimates each factor, and places it in the ranking. Fill out the tour questionnaire after you visit to replace the estimates.</div>
   </section>
 
@@ -354,26 +365,90 @@ async function api(method,path,body){
   if(!r.ok)throw{code:'http',status:r.status};
   return r.json();
 }
-// Research on the website runs in the Worker (Claude + web search) when its API key is set.
-let serverResearch=false;
-const canResearch=()=>!!sample||serverResearch;
+// Adding: inside Claude, Claude researches the listing; on the website, a free lookup (no AI) reads the
+// listing page or finds the building on the map; offline, it just adds the name.
+const canResearch=()=>!!sample;
 function updateAddUi(){
-  if(canResearch()){$('addbtn').textContent='Research & rank';
-    $('addmsg').textContent='Claude looks the listing up on the web, estimates each factor, and places it in the ranking. Fill out the tour questionnaire after you visit to replace the estimates.';}
+  const bmRow=$('bmrow');
+  if(sample){$('addbtn').textContent='Research & rank';
+    $('addmsg').textContent='Claude looks up the building, estimates each factor, and places it in the ranking. Fill out the tour questionnaire after you visit to replace the estimates.';}
+  else if(state.mode==='remote'){$('addbtn').textContent='Look up & add';
+    $('addmsg').textContent='Free lookup: paste a listing link or type the building name. It fills in what the listing publishes (address, 3-bed price, pets, parking, washer/dryer) and the map adds commute times. Scores start as placeholders until you tour.';}
   else{$('addbtn').textContent='Add';
-    $('addmsg').textContent='Research isn’t set up yet, so added apartments start with placeholder scores. Fill out the questionnaire to rank them.';}
+    $('addmsg').textContent='Added apartments start with placeholder scores. Fill out the questionnaire to rank them.';}
+  if(bmRow)bmRow.hidden=state.mode!=='remote';
 }
-async function researchOnServer(q,signal){
-  const r=await fetch('/api/research',{method:'POST',signal,cache:'no-store',headers:{'content-type':'application/json','x-passcode':passcode()},
-    body:JSON.stringify({query:q,locations:state.locs.map(l=>({id:l.id,name:l.name,address:l.address})),factors:state.custom})});
-  let body={};try{body=await r.json()}catch(e){}
-  if(r.status===401){state.mode='locked';render();throw{code:'locked'}}
-  if(r.status===501){serverResearch=false;updateAddUi();throw{code:'not_configured'}}
-  if(!r.ok||!body.result)throw{code:'server',message:body.error||'Research failed. Try again.'};
-  return body.result;
+// A free lookup result (from /api/lookup or the Chrome button) -> a new apartment with placeholder scores.
+function aptFromListing(r,status){
+  const b=blankApt(r.name||'New apartment',status);
+  Object.assign(b,{link:r.link||null,address:r.address||null,lat:r.lat??null,lon:r.lon??null,check:r.check||null,
+    summary:r.summary||'',rent:r.rent??null,rentNote:r.rentNote||null,baths:r.baths??null,petNote:r.petNote||null,
+    parkingNote:r.parkingNote||null,amenities:Array.isArray(r.amenities)?r.amenities.slice(0,10):[],phone:r.phone||null,website:r.website||null,source:'lookup'});
+  b.must={beds:r.beds3??null,baths:r.baths==null?null:r.baths>=2,pets:r.pets??null,parking:r.parking??null,laundry:r.laundry??null};
+  const solid=new Set();
+  if(b.rent!=null){b.scores.rent=rentScore(b.rent);solid.add('rent')}
+  if(b.baths!=null){b.scores.baths=bathScore(b.baths);solid.add('baths')}
+  if(r.pets===false)b.scores.pets=1;
+  if(r.parking===false)b.scores.parking=1;
+  b.guessed=FACTORS.map(f=>f.k).filter(k=>!solid.has(k));
+  return b;
+}
+function lookupSummary(r){
+  const got=(r.found||[]).join(', ');
+  return got?`Found ${got}.`:'The listing didn’t publish details we can read.';
+}
+async function freeLookup(q,status,place){
+  const msg=$('addmsg');$('addbtn').disabled=true;msg.classList.remove('err');msg.textContent='Looking it up…';
+  try{
+    const r=await api('GET','/api/lookup?q='+encodeURIComponent(q));
+    const apt=aptFromListing(r,status);
+    if(!/^https?:\/\//i.test(q)&&apt.name==='New apartment')apt.name=q;
+    if(place)Object.assign(apt,place);
+    const id=newId(apt.name);await saveApt(id,apt);state.open[id]=true;
+    $('q').value='';$('qaddr').value='';addPlace={};addChk.status.replaceChildren();
+    msg.textContent=`Added ${apt.name}. `+(r.blocked?'That site blocks automatic reading, so only the location was filled in. Open the listing in Chrome and click “Send to Apt Hunt” to pull the details for free.':
+      r.notFound&&!place?'Couldn’t find it on the map. Add its address in the tour questionnaire to get commute times.':lookupSummary(r));
+    setTab(status);
+  }catch(e){if(e&&e.code!=='locked'){msg.classList.add('err');msg.textContent='Lookup failed. Check your connection and try again.'}}
+  finally{$('addbtn').disabled=false}
+}
+// "Send to Apt Hunt" Chrome button: the listing page (open in the user's own browser) posts its data here.
+let importArmed=location.hash==='#import';
+window.addEventListener('hashchange',()=>{if(location.hash==='#import')importArmed=true});
+window.addEventListener('message',async e=>{
+  const d=e.data;if(!importArmed||!d||d.type!=='apt-hunt-import'||!d.data)return;
+  importArmed=false;
+  try{e.source&&e.source.postMessage('apt-hunt-ack',e.origin)}catch(_){}
+  try{history.replaceState(null,'',location.pathname)}catch(_){}
+  for(let i=0;i<40&&state.mode==='loading';i++)await new Promise(r=>setTimeout(r,250));
+  const panel=$('importpanel'),msg=$('addmsg');
+  if(state.mode!=='remote'){msg.classList.add('err');msg.textContent='Open the website version to import listings.';return}
+  panel.hidden=false;panel.replaceChildren('Reading the listing…');
+  let r;try{r=await api('POST','/api/parse',d.data)}catch(err){panel.textContent=err&&err.code==='locked'?'':'Couldn’t read that page. Try again.';return}
+  const row=(label,val)=>h('div',{class:'irow'},h('span',{class:'cml'},label),h('span',null,val??'—'));
+  const sel=h('select',{'aria-label':'Category',id:'importstatus'},...Object.entries(STATUS).map(([k,l])=>h('option',{value:k,selected:k==='interested'},l)));
+  panel.replaceChildren(
+    h('div',{class:'line1'},h('span',{class:'plate'},r.name||'Listing'),h('span',{class:'chip'},'From Chrome')),
+    row('Address',r.address),row('3-bed rent',r.rent!=null?money(r.rent)+'/mo':r.rentNote),row('Baths (3-bed)',r.baths),
+    row('Pets',r.pets===true?'Allowed':r.pets===false?'Not allowed':null),row('Parking',r.parkingNote||(r.parking===true?'Available':r.parking===false?'None':null)),
+    row('Washer/dryer',r.laundry===true?'In unit':r.laundry===false?'Not in unit':null),row('Amenities',(r.amenities||[]).slice(0,6).join(', ')||null),
+    h('div',{class:'row'},sel,
+      h('button',{class:'btn primary',onclick:async()=>{const apt=aptFromListing(r,sel.value);const id=newId(apt.name);await saveApt(id,apt);state.open[id]=true;
+        panel.hidden=true;panel.replaceChildren();msg.classList.remove('err');msg.textContent=`Added ${apt.name} from Chrome. `+lookupSummary(r);setTab(sel.value)}},'Add apartment'),
+      h('button',{class:'btn',onclick:()=>{panel.hidden=true;panel.replaceChildren()}},'Cancel')));
+  panel.scrollIntoView({block:'center'});
+});
+function bookmarkletHref(){
+  const code=`(function(){var S=${JSON.stringify(location.origin)};var q=function(s){var e=document.querySelector(s);return e?e.content:null};`+
+    `var d={url:location.href,ld:[].slice.call(document.querySelectorAll('script[type="application/ld+json"]'),0,30).map(function(s){return s.textContent}),`+
+    `meta:{title:document.title,ogTitle:q('meta[property="og:title"]'),ogDesc:q('meta[property="og:description"]')||q('meta[name="description"]')},`+
+    `text:(document.body.innerText||'').slice(0,80000)};var w=window.open(S+'/#import','apthunt');`+
+    `if(!w){alert('Allow pop-ups for this site to send it to Apt Hunt.');return}`+
+    `var n=0,t=setInterval(function(){if(++n>60){clearInterval(t);return}try{w.postMessage({type:'apt-hunt-import',data:d},S)}catch(e){}},500);`+
+    `window.addEventListener('message',function(e){if(e.origin===S&&e.data==='apt-hunt-ack')clearInterval(t)})})();`;
+  return 'javascript:'+encodeURIComponent(code);
 }
 function applyRemote(d){
-  if(d.features){serverResearch=!!d.features.research;updateAddUi()}
   remoteRev=d.rev;const next={};for(const[id,doc]of Object.entries(d.apts||{}))next[id]={...doc,id};state.apts=next;
   const c=d.config||{};
   state.weights=c.weights?{...DEFAULT_W,...c.weights}:{...DEFAULT_W};
@@ -589,6 +664,7 @@ async function onAdd(){
   const typedAddr=$('qaddr').value.trim();
   const place=typedAddr?{address:typedAddr,lat:addPlace.lat,lon:addPlace.lon,check:addPlace.check}:null;
   const clearAddr=()=>{$('qaddr').value='';addPlace={};addChk.status.replaceChildren()};
+  if(!canResearch()&&state.mode==='remote'){await freeLookup(q,status,place);return}
   if(!canResearch()){
     const base=blankApt(isUrl?'New apartment':q,status);if(isUrl)base.link=q;
     if(place)Object.assign(base,place);
@@ -599,8 +675,7 @@ async function onAdd(){
   ctl=new AbortController();$('addbtn').disabled=true;$('stopbtn').hidden=false;
   msg.textContent='Researching… this can take up to a minute.';
   try{
-    const r=sample?await sample.json(researchPrompt(q),{signal:ctl.signal,modelTier:'default',onText:()=>{msg.textContent='Writing up the results…'}}):
-      (msg.textContent='Searching the web for this listing… this usually takes 30–90 seconds.',await researchOnServer(q,ctl.signal));
+    const r=await sample.json(researchPrompt(q),{signal:ctl.signal,modelTier:'default',onText:()=>{msg.textContent='Writing up the results…'}});
     if(!r||typeof r!=='object'||!r.name)throw{code:'invalid_json'};
     const sc=r.scores||{};const rent=num(r.rentEstimate);
     const commutes={};(Array.isArray(r.commutes)?r.commutes:[]).forEach(c=>{if(c&&state.locs.some(l=>l.id===c.id))commutes[c.id]={walk:num(c.walkMin),transit:num(c.transitMin),drive:num(c.driveMin),driveSrc:num(c.driveMin)==null?null:'claude'}});
@@ -625,8 +700,6 @@ async function onAdd(){
     if(code==='cancelled')msg.textContent='Stopped.';
     else if(code==='locked')msg.textContent='';
     else{msg.classList.add('err');msg.textContent=
-      code==='server'?e.message:
-      code==='not_configured'?'Research isn’t set up on this site yet. Click Add again to add it with placeholder scores.':
       code==='not_granted'||code==='sampling_disabled'?'Research needs permission to use Claude. Reload and allow it to try again.':
       code==='rate_limited'?'Too many lookups right now. Try again in a few minutes.':
       code==='invalid_json'?'Couldn’t read the result. Try again, or use the building’s full name.':
@@ -1079,6 +1152,8 @@ function openPriorities(){
   const close=showModal(form);
 }
 
+$('bmlink').href=bookmarkletHref();
+$('bmlink').addEventListener('click',e=>{e.preventDefault();$('addmsg').textContent='Drag the “Send to Apt Hunt” button to your bookmarks bar, then click it on a listing page.'});
 let addPlace={};
 const addChk=addrCheck($('qaddr'),r=>{addPlace=r||{}});
 $('qaddrrow').append(addChk.status);

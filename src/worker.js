@@ -1,6 +1,6 @@
 import { DurableObject } from "cloudflare:workers";
 import SEED from "./seed.json";
-import { research } from "./research.js";
+import { fetchListing, parseListing, nameFromUrl } from "./listing.js";
 
 const json = (body, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json", "cache-control": "no-store" } });
@@ -145,6 +145,61 @@ export class HuntStore extends DurableObject {
     }
   }
 
+  // Adds map coordinates to a parsed listing that has an address but no pin.
+  async finishListing(out, link) {
+    out.link = link && /^https?:\/\//i.test(link) ? link : null;
+    // No address on the page: look the building up on the map by its name (or the name in its link).
+    if (!out.address && out.lat == null) {
+      const guess = out.name && out.name.length > 2 ? out.name : nameFromUrl(link || "");
+      const place = guess ? await this.placeByName(guess) : null;
+      if (place && place.address) {
+        Object.assign(out, { address: place.address, lat: place.lat, lon: place.lon, check: place.check });
+        out.found = [...(out.found || []), "address (from the map)"];
+        if (!out.name || out.name === guess) out.name = out.name || place.name;
+      }
+      return out;
+    }
+    if (out.address && out.lat == null) {
+      const g = await this.geocode(/,/.test(out.address) ? out.address : out.address + ", Los Angeles, CA");
+      if (g) { out.lat = g.lat; out.lon = g.lon; out.check = g.exact ? "exact" : "approx"; }
+    } else if (out.lat != null) out.check = "pin";
+    return out;
+  }
+
+  // A building name -> {name, address, lat, lon, check, found} from OpenStreetMap, or null.
+  async placeByName(name) {
+    const key = "plc:" + name.toLowerCase();
+    const hit = await this.ctx.storage.get(key);
+    if (hit !== undefined) return hit;
+    const wait = (this.lastGeo || 0) + 1100 - Date.now();
+    this.lastGeo = Date.now() + Math.max(0, wait);
+    if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+    let out = null;
+    try {
+      // Bounded to greater Los Angeles so "Circa" finds the building, not a place in another state.
+      const r = await fetch(
+        "https://nominatim.openstreetmap.org/search?format=json&limit=1&addressdetails=1&extratags=1&countrycodes=us" +
+          "&viewbox=-118.70,34.35,-117.90,33.70&bounded=1&q=" + encodeURIComponent(name),
+        { headers: { "user-agent": UA, "accept-language": "en" } },
+      );
+      const p = r.ok ? (await r.json())[0] : null;
+      if (p) {
+        const a = p.address || {};
+        const street = [a.house_number, a.road].filter(Boolean).join(" ");
+        const city = a.city || a.town || a.suburb || a.neighbourhood || "Los Angeles";
+        const address = street ? `${street}, ${city}, ${a.state || "CA"} ${a.postcode || ""}`.trim() : null;
+        const tags = p.extratags || {};
+        out = {
+          name: p.name || name, address, lat: Number(p.lat), lon: Number(p.lon), check: street ? "exact" : "approx",
+          phone: tags.phone || tags["contact:phone"] || null, website: tags.website || tags["contact:website"] || null,
+          found: street ? ["address"] : [],
+        };
+      }
+    } catch {}
+    await this.ctx.storage.put(key, out);
+    return out;
+  }
+
   async readBody(req) {
     const text = await req.text();
     if (text.length > MAX_BYTES) return null;
@@ -169,10 +224,38 @@ export class HuntStore extends DurableObject {
       const strip = (map, n) => Object.fromEntries([...map].map(([k, v]) => [k.slice(n), v]));
       return json({
         rev,
-        features: { research: !!this.env.ANTHROPIC_API_KEY },
         apts: strip(await s.list({ prefix: "apt:" }), 4),
         config: strip(await s.list({ prefix: "cfg:" }), 4),
       });
+    }
+
+    // Free listing lookup (no AI): a listing link is read directly; a building name is found on OpenStreetMap.
+    if (req.method === "GET" && path === "/lookup") {
+      const q = String(url.searchParams.get("q") || "").trim().slice(0, 2000);
+      if (!q) return fail(400, "Type a building name or paste a listing link.");
+      if (/^https?:\/\//i.test(q)) {
+        const page = await fetchListing(q);
+        if (page.parts) return json(await this.finishListing(parseListing(page.parts), q));
+        // The site blocks automatic reading: fall back to finding the building by the name in its link.
+        const guess = nameFromUrl(q);
+        const place = guess ? await this.placeByName(guess) : null;
+        return json({ ...(place || { name: guess, found: [] }), link: q, blocked: true });
+      }
+      const place = await this.placeByName(q);
+      return json(place ? { ...place, byName: true } : { name: q, found: [], byName: true, notFound: true });
+    }
+
+    // Listing data sent by the "Send to Apt Hunt" Chrome button (read in the user's own browser).
+    if (req.method === "POST" && path === "/parse") {
+      const body = await this.readBody(req);
+      if (!body) return fail(400, "Nothing to read from that page.");
+      const parts = {
+        url: String(body.url || "").slice(0, 2000),
+        ld: (Array.isArray(body.ld) ? body.ld : []).slice(0, 30).map((s) => String(s).slice(0, 100000)),
+        meta: body.meta && typeof body.meta === "object" ? body.meta : {},
+        text: String(body.text || "").slice(0, 80000),
+      };
+      return json(await this.finishListing(parseListing(parts), parts.url));
     }
 
     if (req.method === "GET" && path === "/geocode") {
@@ -227,12 +310,6 @@ export default {
     // Optional shared passcode: set a PASSCODE secret on the Worker to require it.
     if (env.PASSCODE && req.headers.get("x-passcode") !== env.PASSCODE) {
       return fail(401, "Passcode required.");
-    }
-    if (url.pathname === "/api/research" && req.method === "POST") {
-      let body = null;
-      try { body = await req.json(); } catch {}
-      const out = await research(env, body);
-      return json(out.body, out.status);
     }
     const stub = env.HUNT.get(env.HUNT.idFromName("workspace"));
     return stub.fetch(req);
