@@ -1,6 +1,6 @@
 import { DurableObject } from "cloudflare:workers";
 import SEED from "./seed.json";
-import { fetchListing, parseListing, nameFromUrl } from "./listing.js";
+import { fetchListing, parseListing, nameFromUrl, searchListingPages, mergeListings } from "./listing.js";
 
 const json = (body, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json", "cache-control": "no-store" } });
@@ -9,12 +9,17 @@ const MAX_BYTES = 200_000;
 const ID = /^[A-Za-z0-9_\-.~]{1,120}$/;
 const CONFIG = new Set(["weights", "locations", "factors"]);
 const UA = "dtla-apartment-hunt/1.0 (+https://dtla-apartment-hunt.jessiefjuarez.workers.dev)";
+const hostOf = (u) => { try { return new URL(u).hostname.replace(/^www\./, ""); } catch { return null; } };
+
 // Map searches are fuzzy ("Onyx" can return a park): accept a place only if its name shares a real word with what was typed.
 function sameName(typed, found) {
-  const words = (s) => new Set(String(s || "").toLowerCase().match(/[a-z0-9]{3,}/g) || []);
-  const skip = new Set(["the", "apartments", "apartment", "los", "angeles", "and", "dtla", "downtown"]);
+  const words = (s) => new Set(String(s || "").toLowerCase().match(/[a-z0-9]{2,}/g) || []);
+  const skip = new Set(["the", "at", "on", "of", "apartments", "apartment", "los", "angeles", "and", "dtla", "downtown", "la"]);
   const got = words(found);
-  return [...words(typed)].some((w) => !skip.has(w) && got.has(w));
+  const all = [...words(typed)];
+  // Short names like "Be DTLA" are all filler words: then match on everything that was typed.
+  const sig = all.filter((w) => !skip.has(w) && w.length >= 3);
+  return (sig.length ? sig : all).some((w) => got.has(w));
 }
 const COORDS =/^(-?\d{1,2}\.\d+)\s*,\s*(-?\d{1,3}\.\d+)$/;
 
@@ -152,6 +157,24 @@ export class HuntStore extends DurableObject {
     }
   }
 
+  // Search the web for the building and read up to 3 listing pages that allow it (free). Only pages whose
+  // building name matches are kept. Cached for a day; DuckDuckGo is asked at most once every 2 seconds.
+  async webListings(name, address) {
+    if (!name || name.length < 3) return [];
+    const q = `${name} apartments ${address ? address.split(",").slice(0, 2).join(" ") : "Los Angeles"}`;
+    const key = "web:" + q.toLowerCase();
+    const hit = await this.ctx.storage.get(key);
+    if (hit && hit.at > Date.now() - 86400000) return hit.list;
+    const wait = (this.lastSearch || 0) + 2000 - Date.now();
+    this.lastSearch = Date.now() + Math.max(0, wait);
+    if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+    const urls = await searchListingPages(q, 4);
+    const pages = await Promise.all(urls.map((u) => fetchListing(u).then((p) => (p.parts ? { ...parseListing(p.parts), source: hostOf(u), sourceUrl: u } : null))));
+    const list = pages.filter((p) => p && (p.found || []).length && sameName(name, p.name)).slice(0, 3);
+    if (urls.length) await this.ctx.storage.put(key, { at: Date.now(), list });
+    return list;
+  }
+
   // Adds map coordinates to a parsed listing that has an address but no pin.
   async finishListing(out, link) {
     out.link = link && /^https?:\/\//i.test(link) ? link : null;
@@ -175,7 +198,7 @@ export class HuntStore extends DurableObject {
 
   // A building name -> {name, address, lat, lon, check, found} from OpenStreetMap, or null.
   async placeByName(name) {
-    const key = "plc4:" + name.toLowerCase();
+    const key = "plc5:" + name.toLowerCase();
     const hit = await this.ctx.storage.get(key);
     if (hit !== undefined) return hit;
     let out = null;
@@ -272,28 +295,27 @@ export class HuntStore extends DurableObject {
       if (!q) return fail(400, "Type a building name or paste a listing link.");
       if (/^https?:\/\//i.test(q)) {
         const page = await fetchListing(q);
-        if (page.parts) return json(await this.finishListing(parseListing(page.parts), q));
-        // The site blocks automatic reading: fall back to finding the building by the name in its link.
+        if (page.parts) {
+          const own = { ...parseListing(page.parts), source: hostOf(q) };
+          // A readable page with little on it (a building's homepage): top it up from other listings.
+          const extra = own.rent == null || own.pets == null ? await this.webListings(own.name, own.address) : [];
+          return json(await this.finishListing(mergeListings([own, ...extra]), q));
+        }
+        // The site blocks automatic reading (Apartments.com): read the same building on other listing sites.
         const guess = nameFromUrl(q);
         const place = guess ? await this.placeByName(guess) : null;
-        return json({ ...(place || { name: guess, found: [] }), link: q, blocked: true });
+        const extra = guess ? await this.webListings(guess, place && place.address) : [];
+        const merged = mergeListings([...extra, place ? { ...place, name: undefined } : {}]);
+        merged.name = extra.find((x) => x.name)?.name || (place && place.name) || guess;
+        return json({ ...(await this.finishListing(merged, q)), link: q, blocked: true, fromOtherSites: extra.length > 0 });
       }
       const place = await this.placeByName(q);
+      const extra = await this.webListings(q, place && place.address);
       // Keep the name as typed; the map's name for a building is often a generic label like "Ava Apartments".
-      return json(place ? { ...place, name: q, mapName: place.name, byName: true } : { name: q, found: [], byName: true, notFound: true });
-    }
-
-    // Listing data sent by the "Send to Apt Hunt" Chrome button (read in the user's own browser).
-    if (req.method === "POST" && path === "/parse") {
-      const body = await this.readBody(req);
-      if (!body) return fail(400, "Nothing to read from that page.");
-      const parts = {
-        url: String(body.url || "").slice(0, 2000),
-        ld: (Array.isArray(body.ld) ? body.ld : []).slice(0, 30).map((s) => String(s).slice(0, 100000)),
-        meta: body.meta && typeof body.meta === "object" ? body.meta : {},
-        text: String(body.text || "").slice(0, 80000),
-      };
-      return json(await this.finishListing(parseListing(parts), parts.url));
+      const merged = mergeListings([place || {}, ...extra]);
+      merged.name = q;
+      if (!place && !extra.length) return json({ name: q, found: [], byName: true, notFound: true });
+      return json({ ...(await this.finishListing(merged, null)), name: q, byName: true });
     }
 
     if (req.method === "GET" && path === "/geocode") {

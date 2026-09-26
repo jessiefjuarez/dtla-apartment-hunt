@@ -96,6 +96,13 @@ export function parseListing(parts) {
     out.name = str(meta.siteName) || (host && !/zillow|apartments|trulia|redfin|rent|hotpads|craigslist/i.test(host) ? host : null) || out.name;
   }
   out.address = addressOf(main?.address) || addressOf(nodes.find((n) => n.address)?.address);
+  // No structured address: look for "1120 W 6th St, Los Angeles" style text in the description or page.
+  if (!out.address) {
+    const m = `${meta.ogDesc || ""}\n${meta.title || ""}\n${text.slice(0, 20000)}`.match(
+      /\b(\d{2,5}\s+(?:[NSEW]\.?\s+)?[A-Z0-9][\w.']*(?:\s+[A-Z0-9][\w.']*){0,3}\s+(?:St|Street|Ave|Avenue|Blvd|Boulevard|Dr|Drive|Rd|Road|Way|Wy|Pl|Place|Ln|Lane|Ct|Court)\b\.?)(?:,?\s+(?:#|Unit|Apt)\s*\w+)?,?\s+(Los Angeles|Burbank|Glendale|Pasadena|Santa Monica|West Hollywood|Culver City|[A-Z][a-z]+(?: [A-Z][a-z]+)?),?\s+(?:CA|California)\b(?:\s+(\d{5}))?/,
+    );
+    if (m) out.address = `${m[1]}, ${m[2]}, CA${m[3] ? " " + m[3] : ""}`;
+  }
   const geo = main?.geo || nodes.find((n) => n.geo)?.geo;
   if (geo && isFinite(Number(geo.latitude)) && isFinite(Number(geo.longitude))) { out.lat = Number(geo.latitude); out.lon = Number(geo.longitude); }
   out.phone = str(main?.telephone) || null;
@@ -150,12 +157,57 @@ export function parseListing(parts) {
   return out;
 }
 
+// Sites that block automatic reading, or are search pages rather than one building's listing.
+const SKIP_HOSTS = /(^|\.)(apartments\.com|duckduckgo\.com|bing\.com|google\.com|yelp\.com|facebook\.com|instagram\.com|tiktok\.com|youtube\.com|reddit\.com|wikipedia\.org|craigslist\.org)$/i;
+
+// Free web search (DuckDuckGo's HTML page) -> up to `max` result links worth reading. Ads are skipped.
+export async function searchListingPages(query, max = 3) {
+  try {
+    const r = await fetch("https://html.duckduckgo.com/html/?q=" + encodeURIComponent(query), { headers: BROWSER_HEADERS });
+    if (!r.ok) return [];
+    const html = await r.text();
+    const links = [];
+    for (const m of html.matchAll(/class="result__a"[^>]*href="([^"]+)"/g)) {
+      const u = m[1].match(/uddg=([^&]+)/);
+      let url;
+      try { url = new URL(u ? decodeURIComponent(u[1]) : m[1].replace(/^\/\//, "https://")); } catch { continue; }
+      if (SKIP_HOSTS.test(url.hostname)) continue;
+      // Zillow city/neighborhood pages list many buildings; only its single-building pages help.
+      if (/zillow\.com$/i.test(url.hostname) && !/\/apartments\/[^/]+\/[^/]+\//i.test(url.pathname)) continue;
+      if (!links.some((l) => new URL(l).hostname === url.hostname)) links.push(url.href);
+      if (links.length >= max) break;
+    }
+    return links;
+  } catch {
+    return [];
+  }
+}
+
+// Combine several parsed listings for the same building: first value found wins, lists are merged.
+export function mergeListings(list) {
+  const out = { amenities: [], found: [], sources: [] };
+  for (const l of list) {
+    for (const [k, v] of Object.entries(l)) {
+      if (k === "amenities") out.amenities = [...new Set([...out.amenities, ...(v || [])])].slice(0, 12);
+      else if (k === "found") out.found = [...new Set([...out.found, ...(v || [])])];
+      else if (out[k] == null && v != null && v !== "") out[k] = v;
+    }
+    if (l.source) out.sources.push(l.source);
+  }
+  return out;
+}
+
 // "…/ava-little-tokyo-los-angeles-ca/vfrceng/" -> "ava little tokyo" (used when a site won't let us read the page).
 export function nameFromUrl(url) {
   try {
     const u = new URL(url);
-    const seg = u.pathname.split("/").filter(Boolean).sort((a, b) => b.length - a.length)[0] || u.hostname.split(".").slice(-2)[0];
-    return decodeURIComponent(seg).replace(/[-_]+/g, " ").replace(/\b(los angeles|ca|apartments?|for rent|\d{5})\b/gi, " ").replace(/\s+/g, " ").trim() || null;
+    const clean = (seg) => decodeURIComponent(seg).replace(/[-_+]+/g, " ")
+      .replace(/\b(los angeles|california|ca|apartments?|for rent|rent|homes?|\d{5})\b/gi, " ").replace(/\s+/g, " ").trim();
+    // Skip listing IDs like "B6mzc5" / "m6z036j" and city-only segments; the building's name is what's left.
+    const names = u.pathname.split("/").filter(Boolean)
+      .filter((s) => !(/\d/.test(s) && /^[a-z0-9]{4,12}$/i.test(s)) && !/^(p|a|b|lc)_?\d+$/i.test(s))
+      .map(clean).filter((s) => s.length >= 2);
+    return names.sort((a, b) => b.length - a.length)[0] || null;
   } catch {
     return null;
   }
