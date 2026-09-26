@@ -101,7 +101,8 @@ h1{font-size:clamp(26px,5vw,36px);font-weight:800;letter-spacing:-.01em;line-hei
 .apt-head{display:grid;grid-template-columns:44px minmax(0,1fr);gap:14px;align-items:center;padding:14px 0 14px 14px;width:100%;text-align:left;background:none;border:0;border-radius:10px}
 .listbtn{display:inline-flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;min-width:68px;min-height:56px;padding:6px 10px;
   border:1.5px solid var(--sign);border-radius:10px;background:var(--surface-2);color:var(--bar);font-weight:700;font-size:12.5px;text-decoration:none;letter-spacing:.02em}
-.listbtn .ic{font-size:20px;line-height:1}
+.listbtn .ic{font-size:20px;line-height:1;display:inline-flex}
+.listbtn span:last-child{text-align:center;line-height:1.15;max-width:76px}
 .listbtn:hover{background:var(--sign);color:var(--sign-ink)}
 .listbtn.search{border-color:var(--line);color:var(--muted);font-weight:600}
 .listbtn.search:hover{background:var(--chip);color:var(--ink)}
@@ -186,7 +187,8 @@ details.weights summary{cursor:pointer;font-weight:600}
 @media (max-width:560px){
   .apt-top{gap:8px;padding-right:10px}
   .apt-head{grid-template-columns:24px minmax(0,1fr);gap:8px;padding:12px 0 12px 10px}
-  .listbtn{min-width:52px;min-height:52px;padding:6px 4px;font-size:11.5px}
+  .listbtn{min-width:58px;min-height:56px;padding:6px 4px;font-size:11px}
+  .listbtn span:last-child{max-width:56px}
   .rank{font-size:20px}
   .score b{font-size:22px}
   .pc,.two{grid-template-columns:1fr}
@@ -790,13 +792,18 @@ function commuteRows(a){
             (c.approx?'~':'')+drive+(c.driveRush!=null&&c.driveRush>drive?'–'+c.driveRush:'')+' min'+(c.driveSrc==='map'?'*':'')));
   }));
 }
+// Internet globe icon for the listing button (stroke follows the button's text color).
+const GLOBE_SVG='<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">'+
+  '<circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3c2.5 2.6 3.8 5.6 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.6-3.8-9S9.5 5.6 12 3z"/>'+
+  '<path d="M4.6 7.5h14.8M4.6 16.5h14.8"/></svg>';
 function card(a,s,f,rank){
   const open=!!state.open[a.id];
   const toggle=()=>{state.open[a.id]=!open;render()};
   // The listing link sits beside the score; without a link, the same spot searches the web for the building.
   const url=a.link||a.website||null;
+  const globe=()=>{const s=h('span',{class:'ic','aria-hidden':'true'});s.innerHTML=GLOBE_SVG;return s};
   const listBtn=url?
-    h('a',{class:'listbtn',href:url,target:'_blank',rel:'noopener','aria-label':'Open the listing for '+a.name+' in a new tab'},h('span',{class:'ic'},'↗'),h('span',null,'Listing')):
+    h('a',{class:'listbtn',href:url,target:'_blank',rel:'noopener','aria-label':'Go to the listing for '+a.name+' (opens in a new tab)'},globe(),h('span',null,'Go to listing')):
     h('a',{class:'listbtn search',href:'https://www.google.com/search?q='+encodeURIComponent([a.name,a.address||'Los Angeles','apartments'].join(' ')),target:'_blank',rel:'noopener','aria-label':'Search the web for '+a.name},h('span',{class:'ic'},'⌕'),h('span',null,'Search'));
   const head=h('button',{class:'apt-head','aria-expanded':String(open),onclick:toggle},
     h('div',{class:'rank'},f.length?'–':rank),
