@@ -9,7 +9,14 @@ const MAX_BYTES = 200_000;
 const ID = /^[A-Za-z0-9_\-.~]{1,120}$/;
 const CONFIG = new Set(["weights", "locations", "factors"]);
 const UA = "dtla-apartment-hunt/1.0 (+https://dtla-apartment-hunt.jessiefjuarez.workers.dev)";
-const COORDS = /^(-?\d{1,2}\.\d+)\s*,\s*(-?\d{1,3}\.\d+)$/;
+// Map searches are fuzzy ("Onyx" can return a park): accept a place only if its name shares a real word with what was typed.
+function sameName(typed, found) {
+  const words = (s) => new Set(String(s || "").toLowerCase().match(/[a-z0-9]{3,}/g) || []);
+  const skip = new Set(["the", "apartments", "apartment", "los", "angeles", "and", "dtla", "downtown"]);
+  const got = words(found);
+  return [...words(typed)].some((w) => !skip.has(w) && got.has(w));
+}
+const COORDS =/^(-?\d{1,2}\.\d+)\s*,\s*(-?\d{1,3}\.\d+)$/;
 
 // A pasted Google Maps link or "lat,lon" -> {lat, lon, label}. Short maps.app.goo.gl links are followed once.
 async function pinFrom(q) {
@@ -168,9 +175,40 @@ export class HuntStore extends DurableObject {
 
   // A building name -> {name, address, lat, lon, check, found} from OpenStreetMap, or null.
   async placeByName(name) {
-    const key = "plc:" + name.toLowerCase();
+    const key = "plc4:" + name.toLowerCase();
     const hit = await this.ctx.storage.get(key);
     if (hit !== undefined) return hit;
+    let out = null;
+    // Try the name as typed, then with ", Los Angeles" (OSM matches building names better with a city).
+    for (const q of /los angeles|, ?ca\b/i.test(name) ? [name] : [name, name + ", Los Angeles"]) {
+      out = await this.nominatimPlace(q, name);
+      if (out) break;
+    }
+    if (!out) out = await this.photonPlace(name);
+    await this.ctx.storage.put(key, out);
+    return out;
+  }
+
+  // Photon (komoot) is a fuzzier OpenStreetMap search; biased to downtown LA.
+  async photonPlace(name) {
+    try {
+      const r = await fetch("https://photon.komoot.io/api/?limit=1&lat=34.05&lon=-118.25&q=" + encodeURIComponent(name), { headers: { "user-agent": UA } });
+      const f = r.ok ? (await r.json()).features?.[0] : null;
+      if (!f) return null;
+      const p = f.properties || {}, [lon, lat] = f.geometry?.coordinates || [];
+      if (!/los angeles/i.test(p.county || p.city || "")) return null;
+      if (!sameName(name, p.name) || p.osm_key === "highway") return null;
+      const street = [p.housenumber, p.street].filter(Boolean).join(" ");
+      return {
+        name: p.name || name, address: street ? `${street}, ${p.city || "Los Angeles"}, CA ${p.postcode || ""}`.trim() : null,
+        lat, lon, check: p.housenumber ? "exact" : "approx", found: street ? ["address"] : [],
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  async nominatimPlace(q, name) {
     const wait = (this.lastGeo || 0) + 1100 - Date.now();
     this.lastGeo = Date.now() + Math.max(0, wait);
     if (wait > 0) await new Promise((r) => setTimeout(r, wait));
@@ -179,24 +217,23 @@ export class HuntStore extends DurableObject {
       // Bounded to greater Los Angeles so "Circa" finds the building, not a place in another state.
       const r = await fetch(
         "https://nominatim.openstreetmap.org/search?format=json&limit=1&addressdetails=1&extratags=1&countrycodes=us" +
-          "&viewbox=-118.70,34.35,-117.90,33.70&bounded=1&q=" + encodeURIComponent(name),
+          "&viewbox=-118.70,34.35,-117.90,33.70&bounded=1&q=" + encodeURIComponent(q),
         { headers: { "user-agent": UA, "accept-language": "en" } },
       );
       const p = r.ok ? (await r.json())[0] : null;
-      if (p) {
+      if (p && sameName(name, p.name) && p.class !== "highway") {
         const a = p.address || {};
         const street = [a.house_number, a.road].filter(Boolean).join(" ");
         const city = a.city || a.town || a.suburb || a.neighbourhood || "Los Angeles";
         const address = street ? `${street}, ${city}, ${a.state || "CA"} ${a.postcode || ""}`.trim() : null;
         const tags = p.extratags || {};
         out = {
-          name: p.name || name, address, lat: Number(p.lat), lon: Number(p.lon), check: street ? "exact" : "approx",
+          name: p.name || name, address, lat: Number(p.lat), lon: Number(p.lon), check: a.house_number ? "exact" : "approx",
           phone: tags.phone || tags["contact:phone"] || null, website: tags.website || tags["contact:website"] || null,
           found: street ? ["address"] : [],
         };
       }
     } catch {}
-    await this.ctx.storage.put(key, out);
     return out;
   }
 
@@ -242,7 +279,8 @@ export class HuntStore extends DurableObject {
         return json({ ...(place || { name: guess, found: [] }), link: q, blocked: true });
       }
       const place = await this.placeByName(q);
-      return json(place ? { ...place, byName: true } : { name: q, found: [], byName: true, notFound: true });
+      // Keep the name as typed; the map's name for a building is often a generic label like "Ava Apartments".
+      return json(place ? { ...place, name: q, mapName: place.name, byName: true } : { name: q, found: [], byName: true, notFound: true });
     }
 
     // Listing data sent by the "Send to Apt Hunt" Chrome button (read in the user's own browser).
