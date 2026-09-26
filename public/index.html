@@ -97,7 +97,15 @@ h1{font-size:clamp(26px,5vw,36px);font-weight:800;letter-spacing:-.01em;line-hei
 .list{display:flex;flex-direction:column;gap:10px}
 .apt{background:var(--surface);border:1px solid var(--line);border-radius:10px;box-shadow:var(--shadow)}
 .apt.fail{opacity:.82}
-.apt-head{display:grid;grid-template-columns:44px 1fr auto;gap:14px;align-items:center;padding:14px;width:100%;text-align:left;background:none;border:0;border-radius:10px}
+.apt-top{display:grid;grid-template-columns:minmax(0,1fr) auto auto;align-items:center;gap:12px;padding-right:14px}
+.apt-head{display:grid;grid-template-columns:44px minmax(0,1fr);gap:14px;align-items:center;padding:14px 0 14px 14px;width:100%;text-align:left;background:none;border:0;border-radius:10px}
+.listbtn{display:inline-flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;min-width:68px;min-height:56px;padding:6px 10px;
+  border:1.5px solid var(--sign);border-radius:10px;background:var(--surface-2);color:var(--bar);font-weight:700;font-size:12.5px;text-decoration:none;letter-spacing:.02em}
+.listbtn .ic{font-size:20px;line-height:1}
+.listbtn:hover{background:var(--sign);color:var(--sign-ink)}
+.listbtn.search{border-color:var(--line);color:var(--muted);font-weight:600}
+.listbtn.search:hover{background:var(--chip);color:var(--ink)}
+button.score{background:none;border:0;padding:4px 0;cursor:pointer;color:inherit}
 .rank{font-family:var(--mono);font-weight:700;font-size:26px;color:var(--muted);text-align:center}
 .apt-main{display:flex;flex-direction:column;gap:7px;min-width:0}
 .line1{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
@@ -176,7 +184,9 @@ details.weights summary{cursor:pointer;font-weight:600}
 .section-lbl{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:600;border-top:1px solid var(--line);padding-top:12px}
 
 @media (max-width:560px){
-  .apt-head{grid-template-columns:30px 1fr auto;gap:10px;padding:12px}
+  .apt-top{gap:8px;padding-right:10px}
+  .apt-head{grid-template-columns:24px minmax(0,1fr);gap:8px;padding:12px 0 12px 10px}
+  .listbtn{min-width:52px;min-height:52px;padding:6px 4px;font-size:11.5px}
   .rank{font-size:20px}
   .score b{font-size:22px}
   .pc,.two{grid-template-columns:1fr}
@@ -782,7 +792,13 @@ function commuteRows(a){
 }
 function card(a,s,f,rank){
   const open=!!state.open[a.id];
-  const head=h('button',{class:'apt-head','aria-expanded':String(open),onclick:()=>{state.open[a.id]=!open;render()}},
+  const toggle=()=>{state.open[a.id]=!open;render()};
+  // The listing link sits beside the score; without a link, the same spot searches the web for the building.
+  const url=a.link||a.website||null;
+  const listBtn=url?
+    h('a',{class:'listbtn',href:url,target:'_blank',rel:'noopener','aria-label':'Open the listing for '+a.name+' in a new tab'},h('span',{class:'ic'},'↗'),h('span',null,'Listing')):
+    h('a',{class:'listbtn search',href:'https://www.google.com/search?q='+encodeURIComponent([a.name,a.address||'Los Angeles','apartments'].join(' ')),target:'_blank',rel:'noopener','aria-label':'Search the web for '+a.name},h('span',{class:'ic'},'⌕'),h('span',null,'Search'));
+  const head=h('button',{class:'apt-head','aria-expanded':String(open),onclick:toggle},
     h('div',{class:'rank'},f.length?'–':rank),
     h('div',{class:'apt-main'},
       h('div',{class:'line1'},h('span',{class:'plate'},a.name),
@@ -793,9 +809,10 @@ function card(a,s,f,rank){
       h('div',{class:'facts'},factsLine(a).map(b=>h('span',null,b))),
       commuteRows(a),
       h('div',{class:'musts'},MUSTS.map(([k,l])=>{const v=(a.must||{})[k];return h('span',{class:'must '+(v===true?'y':v===false?'n':''),title:v==null?'Unconfirmed':''},(v===true?'✓ ':v===false?'✗ ':'? ')+l)})),
-      h('div',{class:'bar'},h('i',{style:`width:${clamp(s,0,100)}%`}))),
-    h('div',{class:'score'},h('b',null,s),h('small',null,'/ 100')));
-  const art=h('article',{class:'apt'+(f.length?' fail':'')},head);
+      h('div',{class:'bar'},h('i',{style:`width:${clamp(s,0,100)}%`}))));
+  const top=h('div',{class:'apt-top'},head,listBtn,
+    h('button',{class:'score','aria-label':`Score ${s} out of 100. Show details`,'aria-expanded':String(open),onclick:toggle},h('b',null,s),h('small',null,'/ 100')));
+  const art=h('article',{class:'apt'+(f.length?' fail':'')},top);
   if(open)art.append(detail(a));
   return art;
 }
