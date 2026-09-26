@@ -84,7 +84,14 @@ h1{font-size:clamp(26px,5vw,36px);font-weight:800;letter-spacing:-.01em;line-hei
 .list{display:flex;flex-direction:column;gap:10px}
 .apt{background:var(--surface);border:1px solid var(--line);border-radius:10px;box-shadow:var(--shadow)}
 .apt.fail{opacity:.82}
-.apt-top{display:grid;grid-template-columns:minmax(0,1fr) auto auto;align-items:center;gap:12px;padding-right:14px}
+.apt-top{position:relative;display:grid;grid-template-columns:minmax(0,1fr) auto auto;align-items:center;gap:12px;padding-right:14px;padding-bottom:16px;cursor:pointer;border-radius:10px}
+.apt-top:hover{background:color-mix(in srgb,var(--chip) 35%,transparent)}
+.chev{position:absolute;right:8px;bottom:4px;width:32px;height:28px;display:inline-flex;align-items:center;justify-content:center;
+  background:none;border:0;border-radius:8px;color:var(--muted);cursor:pointer}
+.chev:hover{color:var(--ink);background:var(--chip)}
+.chev svg{transition:transform .2s ease}
+.chev.open svg{transform:rotate(180deg)}
+@media (prefers-reduced-motion:reduce){.chev svg{transition:none}}
 .apt-head{display:grid;grid-template-columns:44px minmax(0,1fr);gap:14px;align-items:center;padding:14px 0 14px 14px;width:100%;text-align:left;background:none;border:0;border-radius:10px}
 .listbtn{display:inline-flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;min-width:68px;min-height:56px;padding:6px 10px;
   border:1.5px solid var(--sign);border-radius:10px;background:var(--surface-2);color:var(--bar);font-weight:700;font-size:12.5px;text-decoration:none;letter-spacing:.02em}
@@ -813,7 +820,7 @@ function card(a,s,f,rank){
   const listBtn=url?
     h('a',{class:'listbtn',href:url,target:'_blank',rel:'noopener','aria-label':'Go to the listing for '+a.name+' (opens in a new tab)'},globe(),h('span',null,'Go to listing')):
     h('a',{class:'listbtn search',href:'https://www.google.com/search?q='+encodeURIComponent([a.name,a.address||'Los Angeles','apartments'].join(' ')),target:'_blank',rel:'noopener','aria-label':'Search the web for '+a.name},h('span',{class:'ic'},'⌕'),h('span',null,'Search'));
-  const head=h('button',{class:'apt-head','aria-expanded':String(open),onclick:toggle},
+  const head=h('button',{class:'apt-head','aria-expanded':String(open)},
     h('div',{class:'rank'},f.length?'–':rank),
     h('div',{class:'apt-main'},
       h('div',{class:'line1'},h('span',{class:'plate'},a.name),
@@ -825,8 +832,12 @@ function card(a,s,f,rank){
       commuteRows(a),
       h('div',{class:'musts'},MUSTS.map(([k,l])=>{const v=(a.must||{})[k];return h('span',{class:'must '+(v===true?'y':v===false?'n':''),title:v==null?'Unconfirmed':''},(v===true?'✓ ':v===false?'✗ ':'? ')+l)})),
       h('div',{class:'bar'},h('i',{style:`width:${clamp(s,0,100)}%`}))));
-  const top=h('div',{class:'apt-top'},head,listBtn,
-    h('button',{class:'score','aria-label':`Score ${s} out of 100. Show details`,'aria-expanded':String(open),onclick:toggle},h('b',null,s),h('small',null,'/ 100')));
+  // The whole top of the card (details, score, empty space, and the arrow) opens and closes it; only the listing link doesn't.
+  const chev=h('button',{class:'chev'+(open?' open':''),'aria-label':(open?'Hide':'Show')+' details for '+a.name,'aria-expanded':String(open)});
+  chev.innerHTML='<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>';
+  const top=h('div',{class:'apt-top',onclick:e=>{if(!e.target.closest('a'))toggle()}},head,listBtn,
+    h('button',{class:'score','aria-label':`Score ${s} out of 100. ${open?'Hide':'Show'} details`,'aria-expanded':String(open)},h('b',null,s),h('small',null,'/ 100')),
+    chev);
   const art=h('article',{class:'apt'+(f.length?' fail':'')},top);
   if(open)art.append(detail(a));
   return art;
