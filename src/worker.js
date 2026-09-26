@@ -1,5 +1,6 @@
 import { DurableObject } from "cloudflare:workers";
 import SEED from "./seed.json";
+import { research } from "./research.js";
 
 const json = (body, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json", "cache-control": "no-store" } });
@@ -168,6 +169,7 @@ export class HuntStore extends DurableObject {
       const strip = (map, n) => Object.fromEntries([...map].map(([k, v]) => [k.slice(n), v]));
       return json({
         rev,
+        features: { research: !!this.env.ANTHROPIC_API_KEY },
         apts: strip(await s.list({ prefix: "apt:" }), 4),
         config: strip(await s.list({ prefix: "cfg:" }), 4),
       });
@@ -225,6 +227,12 @@ export default {
     // Optional shared passcode: set a PASSCODE secret on the Worker to require it.
     if (env.PASSCODE && req.headers.get("x-passcode") !== env.PASSCODE) {
       return fail(401, "Passcode required.");
+    }
+    if (url.pathname === "/api/research" && req.method === "POST") {
+      let body = null;
+      try { body = await req.json(); } catch {}
+      const out = await research(env, body);
+      return json(out.body, out.status);
     }
     const stub = env.HUNT.get(env.HUNT.idFromName("workspace"));
     return stub.fetch(req);

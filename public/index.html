@@ -354,7 +354,26 @@ async function api(method,path,body){
   if(!r.ok)throw{code:'http',status:r.status};
   return r.json();
 }
+// Research on the website runs in the Worker (Claude + web search) when its API key is set.
+let serverResearch=false;
+const canResearch=()=>!!sample||serverResearch;
+function updateAddUi(){
+  if(canResearch()){$('addbtn').textContent='Research & rank';
+    $('addmsg').textContent='Claude looks the listing up on the web, estimates each factor, and places it in the ranking. Fill out the tour questionnaire after you visit to replace the estimates.';}
+  else{$('addbtn').textContent='Add';
+    $('addmsg').textContent='Research isn’t set up yet, so added apartments start with placeholder scores. Fill out the questionnaire to rank them.';}
+}
+async function researchOnServer(q,signal){
+  const r=await fetch('/api/research',{method:'POST',signal,cache:'no-store',headers:{'content-type':'application/json','x-passcode':passcode()},
+    body:JSON.stringify({query:q,locations:state.locs.map(l=>({id:l.id,name:l.name,address:l.address})),factors:state.custom})});
+  let body={};try{body=await r.json()}catch(e){}
+  if(r.status===401){state.mode='locked';render();throw{code:'locked'}}
+  if(r.status===501){serverResearch=false;updateAddUi();throw{code:'not_configured'}}
+  if(!r.ok||!body.result)throw{code:'server',message:body.error||'Research failed. Try again.'};
+  return body.result;
+}
 function applyRemote(d){
+  if(d.features){serverResearch=!!d.features.research;updateAddUi()}
   remoteRev=d.rev;const next={};for(const[id,doc]of Object.entries(d.apts||{}))next[id]={...doc,id};state.apts=next;
   const c=d.config||{};
   state.weights=c.weights?{...DEFAULT_W,...c.weights}:{...DEFAULT_W};
@@ -533,7 +552,7 @@ async function boot(){
     $('sync').textContent='Saving in this browser only';render();
   }
   try{sample=c&&c.use?await c.use('sample'):null}catch(e){sample=null}
-  if(!sample){$('addbtn').textContent='Add';$('addmsg').textContent='Research isn’t available in this view. Added apartments start with placeholder scores; fill out the questionnaire to rank them.';}
+  updateAddUi();
 }
 
 /* ---------- research ---------- */
@@ -570,7 +589,7 @@ async function onAdd(){
   const typedAddr=$('qaddr').value.trim();
   const place=typedAddr?{address:typedAddr,lat:addPlace.lat,lon:addPlace.lon,check:addPlace.check}:null;
   const clearAddr=()=>{$('qaddr').value='';addPlace={};addChk.status.replaceChildren()};
-  if(!sample){
+  if(!canResearch()){
     const base=blankApt(isUrl?'New apartment':q,status);if(isUrl)base.link=q;
     if(place)Object.assign(base,place);
     await saveApt(newId(base.name),base);$('q').value='';clearAddr();
@@ -580,7 +599,8 @@ async function onAdd(){
   ctl=new AbortController();$('addbtn').disabled=true;$('stopbtn').hidden=false;
   msg.textContent='Researching… this can take up to a minute.';
   try{
-    const r=await sample.json(researchPrompt(q),{signal:ctl.signal,modelTier:'default',onText:()=>{msg.textContent='Writing up the results…'}});
+    const r=sample?await sample.json(researchPrompt(q),{signal:ctl.signal,modelTier:'default',onText:()=>{msg.textContent='Writing up the results…'}}):
+      (msg.textContent='Searching the web for this listing… this usually takes 30–90 seconds.',await researchOnServer(q,ctl.signal));
     if(!r||typeof r!=='object'||!r.name)throw{code:'invalid_json'};
     const sc=r.scores||{};const rent=num(r.rentEstimate);
     const commutes={};(Array.isArray(r.commutes)?r.commutes:[]).forEach(c=>{if(c&&state.locs.some(l=>l.id===c.id))commutes[c.id]={walk:num(c.walkMin),transit:num(c.transitMin),drive:num(c.driveMin),driveSrc:num(c.driveMin)==null?null:'claude'}});
@@ -601,9 +621,12 @@ async function onAdd(){
     $('q').value='';msg.textContent=`Added ${apt.name} (${r.confidence||'low'} confidence). Scores are estimates until you tour.`;
     setTab(status);
   }catch(e){
-    const code=e&&e.code;
+    const code=e&&(e.name==='AbortError'?'cancelled':e.code);
     if(code==='cancelled')msg.textContent='Stopped.';
+    else if(code==='locked')msg.textContent='';
     else{msg.classList.add('err');msg.textContent=
+      code==='server'?e.message:
+      code==='not_configured'?'Research isn’t set up on this site yet. Click Add again to add it with placeholder scores.':
       code==='not_granted'||code==='sampling_disabled'?'Research needs permission to use Claude. Reload and allow it to try again.':
       code==='rate_limited'?'Too many lookups right now. Try again in a few minutes.':
       code==='invalid_json'?'Couldn’t read the result. Try again, or use the building’s full name.':
