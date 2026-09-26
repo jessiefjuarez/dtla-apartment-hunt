@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<meta name="app-version" content="1790390215064">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
@@ -56,6 +57,9 @@ h1{font-size:clamp(26px,5vw,36px);font-weight:800;letter-spacing:-.01em;line-hei
 .office{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;color:var(--muted);font-size:13px}
 .hside{display:flex;flex-direction:column;align-items:flex-end;gap:6px}
 .hbtns{display:flex;gap:8px;flex-wrap:wrap}
+.ptr{position:fixed;left:50%;top:calc(env(safe-area-inset-top,0px) + 8px);transform:translate(-50%,-50px);opacity:0;z-index:20;
+  background:var(--sign);color:var(--sign-ink);font-weight:700;font-size:13px;padding:6px 12px;border-radius:999px;pointer-events:none;transition:opacity .15s}
+#updatebtn{align-self:stretch}
 .locrow{display:grid;grid-template-columns:1fr 2fr auto;gap:8px;align-items:center}
 .locrow input{padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--surface-2);min-width:0;width:100%}
 .prow{display:flex;flex-direction:column;gap:5px;padding-block:8px;border-bottom:1px solid var(--line)}
@@ -207,7 +211,9 @@ body.modal-open{overflow:hidden}
   h1{font-size:28px}
   header.top{flex-direction:column;align-items:stretch;gap:10px}
   .hside{align-items:stretch}
-  .hbtns{display:grid;grid-template-columns:1fr 1fr}
+  .hbtns{display:grid;grid-template-columns:1fr 1fr auto}
+  #refreshbtn{min-width:44px;font-size:18px;padding:6px 10px}
+  #refreshbtn .rlabel{display:none}
   .btn{min-height:44px}
   .btn.small{min-height:40px;padding:8px 12px;font-size:14px}
   input,select,textarea{font-size:16px!important}
@@ -248,7 +254,8 @@ body.modal-open{overflow:hidden}
       <div class="office" id="office"></div>
     </div>
     <div class="hside">
-      <div class="hbtns"><button class="btn small" id="locbtn">Work locations</button><button class="btn small" id="priobtn">Adjust priorities</button></div>
+      <div class="hbtns"><button class="btn small" id="locbtn">Work locations</button><button class="btn small" id="priobtn">Adjust priorities</button><button class="btn small" id="refreshbtn" aria-label="Refresh the page" title="Refresh">&#x21bb;<span class="rlabel"> Refresh</span></button></div>
+      <button class="btn small primary" id="updatebtn" hidden>A new version is ready. Tap to refresh.</button>
       <div class="sync" id="sync">Connecting…</div>
     </div>
   </header>
@@ -493,6 +500,15 @@ async function remoteWrite(method,path,body){
   try{await api(method,path,body);setSync('Saved online · syncs across devices')}
   catch(e){if(e.code!=='locked')setSync('Couldn’t save that change. Check your connection and try again.')}
 }
+// The standalone website (not the Claude artifact) carries an app-version meta tag from scripts/build.mjs.
+const VERSION_META=document.querySelector('meta[name="app-version"]');
+const IS_SITE=!!VERSION_META&&/^https?:$/.test(location.protocol);
+// A home-screen app can keep running an old copy: compare with the deployed version and offer a refresh.
+async function checkVersion(){
+  if(!IS_SITE)return;
+  try{const r=await fetch('/version.json',{cache:'no-store'});const v=r.ok&&(await r.json()).v;
+    if(v&&v!==VERSION_META.content)$('updatebtn').hidden=false}catch(e){}
+}
 async function tryRemote(){
   if(!/^https?:$/.test(location.protocol))return false;
   try{
@@ -502,7 +518,9 @@ async function tryRemote(){
     clearInterval(pollTimer);pollTimer=setInterval(()=>{if(document.visibilityState==='visible')pull()},8000);
     document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')pull()});
     // iPhone Safari and home-screen apps resume from the background without a visibility change sometimes.
-    window.addEventListener('pageshow',()=>pull());window.addEventListener('focus',()=>pull());
+    window.addEventListener('pageshow',()=>{pull();checkVersion()});window.addEventListener('focus',()=>pull());
+    document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')checkVersion()});
+    checkVersion();
     return true;
   }catch(e){return e&&e.code==='locked'}
 }
@@ -647,6 +665,11 @@ async function boot(){
     db.doc('config/factors').onSnapshot(s=>{if(s.exists){setCustom(s.data().list);$('wgrid').dataset.editing='0';render();}},()=>{});
   }else if(await tryRemote()){
     /* online workspace, or waiting on the passcode */
+  }else if(IS_SITE){
+    // The website must never fall back to an empty browser-only list: say it couldn't load and retry.
+    state.mode='offline';setSync('Can’t reach the workspace');render();
+    const retry=async()=>{if(state.mode!=='offline')return;if(await tryRemote()){updateAddUi()}else setTimeout(retry,8000)};
+    setTimeout(retry,4000);window.addEventListener('online',retry);
   }else{
     state.mode='local';const s=lsLoad();state.apts=s.apts||{};if(s.weights)state.weights={...DEFAULT_W,...s.weights};
     if(Array.isArray(s.locs)&&s.locs.length)state.locs=s.locs;
@@ -762,6 +785,9 @@ function render(){
   else note.textContent='';
   const list=$('list');list.replaceChildren();
   if(state.mode==='loading'){list.append(h('div',{class:'empty-state'},'Loading apartments…'));return}
+  if(state.mode==='offline'){list.append(h('div',{class:'empty-state'},
+    h('p',{style:'margin:0 0 10px'},'Couldn’t load your apartments. Check your internet connection. It will keep retrying.'),
+    h('button',{class:'btn primary',onclick:()=>location.reload()},'↻ Try again')));return}
   if(state.mode==='locked'){list.append(lockForm());return}
   if(!items.length){list.append(h('div',{class:'empty-state'},state.tab==='toured'?'No toured apartments yet. After a tour, open the apartment and fill out the questionnaire.':'Nothing here yet. Add an apartment above.'));}
   items.forEach(({a,s,f},i)=>list.append(card(a,s,f,i+1)));
@@ -1189,6 +1215,21 @@ function openPriorities(){
   const close=showModal(form);
 }
 
+$('refreshbtn').onclick=()=>location.reload();
+if(!IS_SITE)$('refreshbtn').hidden=true;
+$('updatebtn').onclick=()=>location.reload();
+// Pull down from the top to refresh (home-screen apps have no reload button).
+(function(){
+  let y0=null,pulled=0;const tip=h('div',{class:'ptr','aria-hidden':'true'},'↻ Pull to refresh');document.body.append(tip);
+  document.addEventListener('touchstart',e=>{y0=window.scrollY<=0&&!document.body.classList.contains('modal-open')?e.touches[0].clientY:null;pulled=0},{passive:true});
+  document.addEventListener('touchmove',e=>{if(y0==null)return;pulled=Math.max(0,e.touches[0].clientY-y0);
+    tip.style.transform=`translate(-50%,${Math.min(pulled,90)-50}px)`;tip.style.opacity=String(Math.min(1,pulled/70));
+    tip.textContent=pulled>70?'↻ Release to refresh':'↻ Pull to refresh'},{passive:true});
+  document.addEventListener('touchend',()=>{if(y0!=null&&pulled>70){tip.textContent='Refreshing…';location.reload();return}
+    tip.style.transform='';tip.style.opacity='';y0=null;pulled=0},{passive:true});
+})();
+// If something breaks while the page is starting, show it instead of a stuck "Loading" message.
+window.addEventListener('error',()=>{if(state.mode==='loading'){state.mode='offline';try{render()}catch(_){}}});
 $('locbtn').onclick=openLocs;
 $('priobtn').onclick=openPriorities;
 $('addbtn').onclick=onAdd;

@@ -8,10 +8,15 @@ const cut = src.indexOf("</style>") + "</style>".length;
 const head = src.slice(0, cut);
 const body = src.slice(cut).trimStart();
 
+// A new version stamp on every build: the page compares it with /version.json to offer a refresh
+// when a home-screen app is still running an older copy.
+const version = String(Date.now());
+
 const html = `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<meta name="app-version" content="${version}">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
@@ -32,4 +37,5 @@ ${body}
 </html>
 `;
 writeFileSync(new URL("../public/index.html", import.meta.url), html);
-console.log("Wrote public/index.html");
+writeFileSync(new URL("../public/version.json", import.meta.url), JSON.stringify({ v: version }) + "\n");
+console.log("Wrote public/index.html and public/version.json (" + version + ")");
