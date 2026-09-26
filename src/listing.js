@@ -205,7 +205,7 @@ export function nameFromUrl(url) {
       .replace(/\b(los angeles|california|ca|apartments?|for rent|rent|homes?|\d{5})\b/gi, " ").replace(/\s+/g, " ").trim();
     // Skip listing IDs like "B6mzc5" / "m6z036j" and city-only segments; the building's name is what's left.
     const names = u.pathname.split("/").filter(Boolean)
-      .filter((s) => !(/\d/.test(s) && /^[a-z0-9]{4,12}$/i.test(s)) && !/^(p|a|b|lc)_?\d+$/i.test(s))
+      .filter((s) => !(/\d/.test(s) && /^[a-z0-9]{4,12}$/i.test(s)) && !/^(p|a|b|lc)_?\d+$/i.test(s) && !/\.[a-z]{2,5}$/i.test(s))
       .map(clean).filter((s) => s.length >= 2);
     return names.sort((a, b) => b.length - a.length)[0] || null;
   } catch {

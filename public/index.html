@@ -244,7 +244,7 @@ body.modal-open{overflow:hidden}
   <section class="add" aria-labelledby="addlbl">
     <label class="lbl" id="addlbl" for="q">Add an apartment: paste a listing link</label>
     <div class="row">
-      <input type="text" id="q" placeholder="https://www.zillow.com/apartments/… or the building’s website" autocomplete="off" inputmode="url">
+      <input type="text" id="q" placeholder="https://www.rent.com/apartment/… or the building’s website" autocomplete="off" inputmode="url">
       <select id="qstatus" aria-label="Category">
         <option value="interested">Looks nice</option>
         <option value="scheduled">To tour</option>
@@ -363,7 +363,7 @@ function updateAddUi(){
   if(sample){$('addbtn').textContent='Research & rank';
     $('addmsg').textContent='Claude looks up the building, estimates each factor, and places it in the ranking. Fill out the tour questionnaire after you visit to replace the estimates.';}
   else if(state.mode==='remote'){$('addbtn').textContent='Add from link';
-    $('addmsg').textContent='Paste a listing link. Zillow, Rent.com, ApartmentGuide and buildings’ own sites work best. It fills in the address, 3-bed price, pets, parking and washer/dryer, and the map adds commute times. If it can’t find enough, you can answer a few quick questions instead.';}
+    $('addmsg').textContent='Paste a listing link. Rent.com, ApartmentGuide, ApartmentList and buildings’ own websites work best; Zillow and Apartments.com usually block reading. It fills in the address, 3-bed price, pets, parking and washer/dryer, and the map adds commute times. If it can’t find enough, you can answer a few quick questions instead.';}
   else{$('addbtn').textContent='Add';
     $('addmsg').textContent='Added apartments start with placeholder scores. Fill out the questionnaire to rank them.';}
 }
@@ -401,7 +401,7 @@ async function freeLookup(q,status){
       setTab(status);
     }else{
       msg.classList.add('err');
-      msg.textContent=r.blocked&&!r.fromOtherSites?'That site blocks automatic reading. Paste a different link for the same building (Zillow, Rent.com, ApartmentGuide or its own website), or answer the questions below.':
+      msg.textContent=r.blocked&&!r.fromOtherSites?'That site blocks automatic reading. Paste a link for the same building from Rent.com, ApartmentGuide, ApartmentList or its own website, or answer the questions below.':
         r.notFound?'Couldn’t find that building. Paste a listing link instead, or answer the questions below.':
         'Couldn’t pull enough from that link. Paste a different link for the same building, or answer the questions below.';
       detailsForm(r,status);
